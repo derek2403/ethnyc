@@ -1,0 +1,146 @@
+// Client-safe contract metadata for the MARS escrow on Arc testnet.
+// No private keys, no node-only imports — safe to import from the browser.
+import { defineChain } from "viem";
+
+export const arcTestnet = defineChain({
+  id: 5042002,
+  name: "Arc Testnet",
+  nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
+  rpcUrls: { default: { http: ["https://rpc.testnet.arc.network"] } },
+  blockExplorers: {
+    default: { name: "Arcscan", url: "https://testnet.arcscan.app" },
+  },
+  testnet: true,
+});
+
+// USDC on Arc — the ERC-20 face of the native USDC the Circle faucet funds. 6 decimals.
+export const USDC_ADDRESS =
+  "0x3600000000000000000000000000000000000000" as const;
+// MarsEscrow, deployed via hardhat/ignition/modules/EscrowArc.ts
+export const ESCROW_ADDRESS =
+  "0x36c4D178C8bF94c30CA8508FaB1FB4C20DB9d483" as const;
+
+export const USDC_DECIMALS = 6;
+
+export const USDC_ABI = [
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "decimals",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint8" }],
+  },
+] as const;
+
+export const ESCROW_ABI = [
+  {
+    type: "function",
+    name: "nextJobId",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "createJob",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "developer", type: "address" },
+      { name: "auditor", type: "address" },
+      { name: "fee", type: "uint256" },
+      { name: "bond", type: "uint256" },
+    ],
+    outputs: [{ name: "jobId", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "fundFee",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "jobId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "postBond",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "jobId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "release",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "jobId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "slash",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "jobId", type: "uint256" },
+      { name: "reporter", type: "address" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "getJob",
+    stateMutability: "view",
+    inputs: [{ name: "jobId", type: "uint256" }],
+    outputs: [
+      {
+        type: "tuple",
+        components: [
+          { name: "developer", type: "address" },
+          { name: "auditor", type: "address" },
+          { name: "fee", type: "uint256" },
+          { name: "bond", type: "uint256" },
+          { name: "feeFunded", type: "bool" },
+          { name: "bondPosted", type: "bool" },
+          { name: "status", type: "uint8" },
+        ],
+      },
+    ],
+  },
+] as const;
+
+export const STATUS_LABELS = [
+  "None",
+  "Open",
+  "Funded",
+  "Settled",
+  "Slashed",
+] as const;
+
+export const explorerTx = (hash: string) =>
+  `${arcTestnet.blockExplorers.default.url}/tx/${hash}`;
+export const explorerAddress = (addr: string) =>
+  `${arcTestnet.blockExplorers.default.url}/address/${addr}`;
