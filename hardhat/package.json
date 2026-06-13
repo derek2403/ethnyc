@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "compile": "hardhat compile",
-    "deploy:arc": "hardhat ignition deploy ignition/modules/Counter.ts --network arcTestnet"
+    "deploy:arc": "hardhat ignition deploy ignition/modules/Counter.ts --network arcTestnet",
+    "deploy:escrow": "hardhat ignition deploy ignition/modules/EscrowArc.ts --network arcTestnet --deployment-id escrow-real"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox-viem": "^5.0.7",
