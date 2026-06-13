@@ -8,7 +8,10 @@ const SKILL = { id: "price-checker", name: "Price Checker", version: "1.0.0", ve
 // x402-protected resource: returns 402 until a valid Gateway payment is attached,
 // then settles it via Circle Gateway and serves the verified link.
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const requirement = skillRequirement();
+  // Recipient = the job's creator (passed by the buyer), falls back to the default seller.
+  const payToQ = String(req.query.payTo ?? "");
+  const payTo = /^0x[0-9a-fA-F]{40}$/.test(payToQ) ? payToQ : SKILL_SELLER;
+  const requirement = skillRequirement(payTo);
   const sig = req.headers["payment-signature"] as string | undefined;
 
   // 1) Unpaid request -> 402 Payment Required with the x402 PAYMENT-REQUIRED header.
