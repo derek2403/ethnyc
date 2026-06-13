@@ -14,7 +14,7 @@ export default function Page1() {
   // Clock is filled after mount to keep SSR / first client render in sync.
   const [clock, setClock] = useState("--:--:--");
   useEffect(() => {
-    const tick = () => setClock(new Date().toUTCString().slice(17, 25));
+    const tick = () => setClock(new Date().toLocaleTimeString("en-US", { timeZone: "America/New_York", hour12: false }));
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
@@ -34,8 +34,13 @@ export default function Page1() {
 
       <div
         style={{
-          width: "100%",
-          height: "100vh",
+          // Uniform ~10% up-scale so all text/UI reads a little larger while
+          // still fitting the viewport exactly (no scroll). The modal escapes
+          // this via a portal so it stays at true viewport size.
+          width: "calc(100% / 1.1)",
+          height: "calc(100vh / 1.1)",
+          transform: "scale(1.1)",
+          transformOrigin: "top left",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
@@ -54,27 +59,10 @@ export default function Page1() {
             borderBottom: "1px solid var(--hair)",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-            <svg width="22" height="22" viewBox="0 0 22 22" style={{ fill: "none", stroke: "var(--mars)", strokeWidth: 1.3 }}>
-              <circle cx="11" cy="11" r="9" />
-              <ellipse cx="11" cy="11" rx="9" ry="3.4" />
-              <ellipse cx="11" cy="11" rx="3.4" ry="9" />
-            </svg>
-            <div style={{ lineHeight: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 15, letterSpacing: ".16em" }}>MARS</div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 9, letterSpacing: ".18em", color: "var(--ink-3)", marginTop: 3, textTransform: "uppercase" }}>
-                System Dashboard
-              </div>
-            </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--safe)", animation: "onlinePulse 2.4s ease-in-out infinite", flex: "none" }} />
-              <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-2)", letterSpacing: ".04em" }}>network online</span>
-            </div>
-            <div style={{ width: 1, height: 24, background: "var(--hair)" }} />
-            <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink)", letterSpacing: ".06em" }}>{clock} UTC</span>
-          </div>
+          {/* Replace /public/logo.svg with your logo (SVG preferred; or a transparent PNG — see note). */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.svg" alt="MARS" style={{ height: 34, width: "auto", display: "block" }} />
+          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink)", letterSpacing: ".06em" }}>{clock} NYC</span>
         </header>
 
         {/* ── BENTO GRID ── */}
@@ -133,6 +121,28 @@ export default function Page1() {
           font-variant-numeric: tabular-nums;
           -webkit-font-smoothing: antialiased;
         }
+        @keyframes popFade {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+        @keyframes popIn {
+          from {
+            opacity: 0;
+            transform: scale(0.97);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+        /* hover-to-pause: freeze all SVG animation in the expanded map */
+        .map-paused * {
+          animation-play-state: paused !important;
+        }
         /* hide scrollbars on panels that occasionally overflow */
         .no-bar {
           scrollbar-width: none;
@@ -177,6 +187,20 @@ export default function Page1() {
           }
           50% {
             transform: translateY(5px);
+          }
+        }
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+        /* audit dots travelling along the connection lines (motion-path) */
+        @keyframes exMove {
+          from {
+            offset-distance: 0%;
+          }
+          to {
+            offset-distance: 100%;
           }
         }
         /* hover affordances (translated from the design's style-hover attrs) */
