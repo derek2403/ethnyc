@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import Popout, { ExpandButton } from "./Popout";
+import SkillsExpanded from "./SkillsExpanded";
 
 // ── Cell C · Skills Verified ─────────────────────────────────────────────
 // Standalone: a big all-time counter, a sparkline of recent history, and a
@@ -40,6 +42,7 @@ export default function SkillsVerified() {
   const [verified, setVerified] = useState(1284);
   const [hist, setHist] = useState<number[]>(() => Array.from({ length: 24 }, (_, i) => 1268 + i));
   const [recent, setRecent] = useState<Verdict[]>(INITIAL_VERDICTS);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -71,6 +74,7 @@ export default function SkillsVerified() {
   const delta = "+" + (hist[hist.length - 1] - hist[0]) + " / hr";
 
   return (
+    <>
     <div
       style={{
         gridColumn: "7 / 11",
@@ -86,10 +90,16 @@ export default function SkillsVerified() {
     >
       <div style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderBottom: "1px solid var(--hair-soft)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--safe)" }} />
+          <svg width="14" height="14" viewBox="0 0 24 24" style={{ fill: "none", stroke: "var(--ink-2)", strokeWidth: 1.7, strokeLinecap: "round", strokeLinejoin: "round" }}>
+            <path d="M12 3 l7 3 v5 c0 4.5 -3 7.6 -7 9 c-4 -1.4 -7 -4.5 -7 -9 V6 Z" />
+            <polyline points="9 12 11.2 14.2 15 9.8" />
+          </svg>
           <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink)" }}>Skills Verified</span>
         </div>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--safe)" }}>{delta}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 10, color: "var(--safe)" }}>{delta}</span>
+          <ExpandButton onClick={() => setOpen(true)} />
+        </div>
       </div>
       <div style={{ flex: 1, minHeight: 0, display: "flex", padding: 14, gap: 16 }}>
         {/* big number + sparkline */}
@@ -119,5 +129,11 @@ export default function SkillsVerified() {
         </div>
       </div>
     </div>
+      {open && (
+        <Popout title="Skills Verified" meta="click a skill for version & audit history" onClose={() => setOpen(false)}>
+          <SkillsExpanded />
+        </Popout>
+      )}
+    </>
   );
 }
