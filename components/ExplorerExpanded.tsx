@@ -95,10 +95,10 @@ export default function ExplorerExpanded() {
           <g style={{ cursor: "pointer" }} onClick={() => reset("network")}>
             <circle cx="300" cy="300" r="162" fill="url(#exMarsGlow)" />
             <image href="/mars.svg" x="150" y="150" width="300" height="300" preserveAspectRatio="xMidYMid meet" />
-            <text x="300" y="462" textAnchor="middle" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".18em", fill: "var(--mars)" }}>
+            <text x="300" y="502" textAnchor="middle" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".18em", fill: "var(--mars)" }}>
               MARS
             </text>
-            <text x="300" y="478" textAnchor="middle" style={{ fontSize: 9.5, letterSpacing: ".14em", fill: "var(--ink-3)" }}>
+            <text x="300" y="518" textAnchor="middle" style={{ marginTop: "2px", fontSize: 9.5, letterSpacing: ".14em", fill: "var(--ink-3)" }}>
               NETWORK CORE
             </text>
           </g>
@@ -119,10 +119,10 @@ export default function ExplorerExpanded() {
           <g style={{ cursor: "pointer", animation: "float2 11s ease-in-out infinite" }} onClick={() => reset("users")}>
             <circle cx="720" cy="450" r="50" fill="transparent" />
             <image href="/deimos.svg" x="678" y="408" width="84" height="84" preserveAspectRatio="xMidYMid meet" />
-            <text x="720" y="504" textAnchor="middle" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".18em", fill: "#e8a15c" }}>
+            <text x="720" y="516" textAnchor="middle" style={{ fontSize: 13, fontWeight: 600, letterSpacing: ".18em", fill: "#e8a15c" }}>
               DEIMOS
             </text>
-            <text x="720" y="520" textAnchor="middle" style={{ fontSize: 9.5, letterSpacing: ".14em", fill: "var(--ink-3)" }}>
+            <text x="720" y="532" textAnchor="middle" style={{ fontSize: 9.5, letterSpacing: ".14em", fill: "var(--ink-3)" }}>
               USERS
             </text>
           </g>
