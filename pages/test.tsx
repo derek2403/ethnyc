@@ -49,6 +49,8 @@ export default function EscrowTest() {
   const [bond, setBond] = useState("0.5");
   const [reporter, setReporter] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [bondBusy, setBondBusy] = useState(false);
+  const [flowMsg, setFlowMsg] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState("");
   const [loggedHash, setLoggedHash] = useState<string | undefined>();
   const [log, setLog] = useState<{ action: string; hash: string; ok: boolean }[]>([]);
