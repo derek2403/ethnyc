@@ -10,7 +10,11 @@
   },
   "dependencies": {
     "@hashgraph/sdk": "^2.81.0",
+    "@worldcoin/agentkit": "^0.2.0",
+    "@worldcoin/idkit-core": "^4.1.8",
+    "dotenv": "^17.4.2",
     "next": "16.2.9",
+    "qrcode.react": "^4.2.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
