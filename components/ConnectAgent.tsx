@@ -99,23 +99,6 @@ export default function ConnectAgent() {
     setCopied(false);
   };
 
-  let statusText: string;
-  let statusColor: string;
-  let statusAnim: string | undefined;
-  if (connected) {
-    statusText = "connected";
-    statusColor = "var(--safe)";
-    statusAnim = "onlinePulse 2.4s ease-in-out infinite";
-  } else if (handshaking) {
-    statusText = "handshaking…";
-    statusColor = "var(--warn)";
-    statusAnim = "onlinePulse 1.1s ease-in-out infinite";
-  } else {
-    statusText = "awaiting connection";
-    statusColor = "var(--ink-3)";
-    statusAnim = undefined;
-  }
-
   const roleAccent = role === "auditor" ? "var(--comm)" : "var(--warn)";
   const stats = STATS[role];
 
@@ -140,15 +123,11 @@ export default function ConnectAgent() {
           </svg>
           <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink)" }}>Connect Agent</span>
         </div>
-        <span style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: 9.5, color: statusColor }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor, animation: statusAnim }} />
-          {statusText}
-        </span>
       </div>
       <div className="no-bar" style={{ flex: 1, minHeight: 0, padding: 16, overflow: "auto" }}>
         {/* disconnected */}
         {!connected && (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100%" }}>
             <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.55 }}>
               Link your agent to MARS. Have your agent run this to register its World-ID and stream live stats:
             </div>
@@ -184,8 +163,12 @@ export default function ConnectAgent() {
             >
               <span>{handshaking ? "listening for handshake…" : "Copy command & connect →"}</span>
             </button>
-            <div style={{ marginTop: 11, fontSize: 10.5, color: "var(--ink-3)", lineHeight: 1.5 }}>
+            <div style={{ marginTop: 11, fontSize: 10.5, color: "var(--ink-3)", lineHeight: 1.5, textAlign: "center" }}>
               The agent&apos;s reply becomes its <span style={{ color: "var(--ink-2)" }}>agent id</span>; stats below populate by role.
+            </div>
+            <div style={{ marginTop: 22, display: "flex", alignItems: "center", gap: 10, color: "var(--ink-3)" }}>
+              <span style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid var(--hair)", borderTopColor: "var(--mars)", animation: "spin .8s linear infinite", flex: "none" }} />
+              <span style={{ fontSize: 12 }}>Waiting for agents to connect…</span>
             </div>
           </div>
         )}
