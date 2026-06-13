@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@worldcoin/agentkit": "^0.2.0",
     "@worldcoin/idkit-core": "^4.1.8",
     "dotenv": "^17.4.2",
     "next": "16.2.9",
