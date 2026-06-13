@@ -1,0 +1,386 @@
+// pages/api/hedera.ts
+// ════════════════════════════════════════════════════════════════════════════
+// MARS — single consolidated Hedera API route. POST { action, ...params }.
+// Every capability in lib/hedera.ts is exposed here via `action`. To trim a
+// standard, delete its lib/hedera.ts block AND the matching case(s) below.
+//
+//   curl -X POST localhost:3000/api/hedera -H 'content-type: application/json' \
+//        -d '{"action":"createAccount"}'
+// ════════════════════════════════════════════════════════════════════════════
+
+import type { NextApiRequest, NextApiResponse } from "next";
+import { Client, PrivateKey } from "@hashgraph/sdk";
+import {
+  getClient,
+  getOperatorKey,
+  // accounts
+  createAgentAccount,
+  // topics
+  createTopic,
+  submitMessage,
+  readTopicMessages,
+  // HTS
+  createVerifiedCollection,
+  createLicenseCollection,
+  mintNft,
+  associateToken,
+  transferNft,
+  // HCS-1 files
+  uploadFileHCS1,
+  downloadFileHCS1,
+  // HCS-2 registry
+  hcs2Memo,
+  buildHCS2Register,
+  computeHCS2State,
+  // HCS-26 skills registry
+  hcs26DiscoveryMemo,
+  hcs26VersionMemo,
+  buildHCS26SkillRegister,
+  buildHCS26VersionRegister,
+  buildSkillManifest,
+  // HCS-25 trust score
+  computeTrustScore,
+  buildTrustScoreMessage,
+  // HCS-18 RFQ board
+  hcs18Memo,
+  buildHCS18Announce,
+  buildHCS18Propose,
+  buildHCS18Respond,
+  buildHCS18Complete,
+  buildHCS18Withdraw,
+  // HCS-16 Flora room
+  hcs16Memo,
+  buildHCS16FloraCreated,
+  buildHCS16Chat,
+  // HCS-11 profile
+  hcs11AccountMemo,
+  buildHCS11Profile,
+  // HCS-20 reputation
+  HCS20_MEMO,
+  buildHCS20Deploy,
+  buildHCS20Mint,
+  buildHCS20Transfer,
+  buildHCS20Burn,
+  computeHCS20Balances,
+  computeReputation,
+  // reviews & ratings
+  buildReview,
+  computeReviews,
+  // main registry (orchestration)
+  buildAgentRegistered,
+  buildJobPosted,
+  buildJobUpdated,
+  computeRegistry,
+  // audit trail + schedule
+  buildAuditStep,
+  buildAuditVerdict,
+  scheduleReAudit,
+} from "@/lib/hedera";
+
+export const config = {
+  api: { bodyParser: { sizeLimit: "5mb" } }, // audit reports / manifests can be large
+  maxDuration: 60, // multi-step Hedera txns (NFT create+mint, chunked upload)
+};
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const body = req.body ?? {};
+  const { action } = body;
+  let client: Client | undefined;
+
+  try {
+    client = getClient();
+    const submitKey = getOperatorKey().publicKey;
+
+    switch (action) {
+      // ── ACCOUNTS ──────────────────────────────────────────────
+      case "createAccount": {
+        return res.status(200).json(await createAgentAccount(client, body.initialBalance));
+      }
+
+      // ── GENERIC TOPIC ─────────────────────────────────────────
+      case "createTopic": {
+        const topicId = await createTopic(client, body.memo ?? "mars-topic", body.submitKey ? submitKey : undefined);
+        return res.status(200).json({ topicId });
+      }
+      case "submitMessage": {
+        return res.status(200).json(await submitMessage(client, body.topicId, body.message));
+      }
+      case "readTopic": {
+        return res.status(200).json({ messages: await readTopicMessages(body.topicId, body.limit ?? 100) });
+      }
+
+      // ── HTS: VERIFIED NFT + LICENSE NFT ───────────────────────
+      case "createVerifiedCollection": {
+        return res.status(200).json(await createVerifiedCollection(client, body.name, body.symbol));
+      }
+      case "createLicenseCollection": {
+        return res.status(200).json(await createLicenseCollection(client, { name: body.name, symbol: body.symbol }));
+      }
+      case "mintNft": {
+        return res.status(200).json(await mintNft(client, body.tokenId, body.metadata));
+      }
+      case "associateToken": {
+        const key = PrivateKey.fromStringDer(body.accountKey);
+        return res.status(200).json(await associateToken(client, body.tokenId, body.accountId, key));
+      }
+      case "transferNft": {
+        return res.status(200).json(await transferNft(client, body.tokenId, body.serial, body.toAccountId));
+      }
+
+      // ── HCS-1: FILE STORAGE (audit report / manifest) ─────────
+      case "uploadReport": {
+        const content = typeof body.content === "string" ? body.content : JSON.stringify(body.content);
+        return res.status(200).json(await uploadFileHCS1(client, content, body.mimeType));
+      }
+      case "downloadReport": {
+        return res.status(200).json(await downloadFileHCS1(body.topicId));
+      }
+
+      // ── HCS-2: TOPIC REGISTRY ─────────────────────────────────
+      case "createRegistry": {
+        const topicId = await createTopic(client, hcs2Memo(body.indexed, body.ttl), submitKey);
+        return res.status(200).json({ topicId, memo: hcs2Memo(body.indexed, body.ttl) });
+      }
+      case "registerInRegistry": {
+        const r = await submitMessage(client, body.registryTopicId, buildHCS2Register(body.t_id, body.metadata, body.m));
+        return res.status(200).json({ ...r, uid: r.sequenceNumber });
+      }
+      case "readRegistry": {
+        return res.status(200).json({ entries: computeHCS2State(await readTopicMessages(body.registryTopicId, body.limit ?? 1000)) });
+      }
+
+      // ── MARS MAIN REGISTRY (orchestration: agents + jobs index) ─
+      case "createMainRegistry": {
+        const topicId = await createTopic(client, hcs2Memo(), submitKey);
+        return res.status(200).json({ topicId, memo: hcs2Memo() });
+      }
+      case "registerAgent": {
+        // create account if none given → give it an HCS-11 profile sub-topic → log it into the main registry
+        let account = body.accountId;
+        let created = null;
+        if (!account) {
+          created = await createAgentAccount(client, body.initialBalance ?? 5);
+          account = created.accountId;
+        }
+        const profileTopicId = await createTopic(client, `hcs-11:profile:${account}`, submitKey);
+        await submitMessage(client, profileTopicId, buildHCS11Profile(body.name ?? "agent", account, body.capabilities ?? [1, 2, 11, 16, 18, 20], body.model ?? "mars-v1", { bio: body.bio, creator: "MARS" }));
+        const reg = await submitMessage(client, body.registryTopicId, buildAgentRegistered({ account, role: body.role ?? "auditor", name: body.name ?? "agent", profileTopicId, evmAddress: created?.evmAddress }));
+        return res.status(200).json({ account, evmAddress: created?.evmAddress, profileTopicId, registrySeq: reg.sequenceNumber, newAccount: created });
+      }
+      case "startJob": {
+        // create the job's own audit-trail sub-topic → log the job into the main registry
+        const auditTrailTopicId = await createTopic(client, `mars-audit:${body.skill ?? "skill"}`, submitKey);
+        const jobId = body.jobId ?? auditTrailTopicId;
+        const reg = await submitMessage(client, body.registryTopicId, buildJobPosted({ jobId, skill: body.skill, requester: body.requester, scope: body.scope, auditTrailTopicId, status: "open" }));
+        return res.status(200).json({ jobId, auditTrailTopicId, registrySeq: reg.sequenceNumber });
+      }
+      case "updateJob": {
+        return res.status(200).json(await submitMessage(client, body.registryTopicId, buildJobUpdated({ jobId: body.jobId, status: body.status, auditor: body.auditor, verdict: body.verdict, trustScore: body.trustScore, note: body.note })));
+      }
+      case "readMainRegistry": {
+        return res.status(200).json(computeRegistry(await readTopicMessages(body.registryTopicId, body.limit ?? 1000)));
+      }
+
+      // ── HCS-26: SKILLS REGISTRY ───────────────────────────────
+      case "createSkillsRegistry": {
+        const topicId = await createTopic(client, hcs26DiscoveryMemo(), submitKey);
+        return res.status(200).json({ topicId, memo: hcs26DiscoveryMemo() });
+      }
+      case "createVersionRegistry": {
+        const topicId = await createTopic(client, hcs26VersionMemo(), submitKey);
+        return res.status(200).json({ topicId, memo: hcs26VersionMemo() });
+      }
+      case "registerSkill": {
+        // body.metadata = SkillMetadata. Returns the consensus seq# (= skill_uid).
+        const r = await submitMessage(client, body.discoveryTopicId, buildHCS26SkillRegister(body.versionRegistryTopicId, body.accountId, body.metadata, body.m));
+        return res.status(200).json({ ...r, skill_uid: r.sequenceNumber });
+      }
+      case "registerVersion": {
+        const r = await submitMessage(client, body.versionRegistryTopicId, buildHCS26VersionRegister(body.skillUid, body.version, body.manifestTopicId, body.checksum, body.status, body.m));
+        return res.status(200).json({ ...r, version_uid: r.sequenceNumber });
+      }
+      case "uploadManifest": {
+        // build a SKILL.json (requires a root SKILL.md file entry) and store it on HCS-1
+        const manifest = buildSkillManifest(body);
+        return res.status(200).json(await uploadFileHCS1(client, manifest));
+      }
+
+      // ── HCS-25: TRUST SCORE ───────────────────────────────────
+      case "trustScore": {
+        const score = computeTrustScore(body.adapters ?? [], body.configVersion, body.confidence);
+        let posted = null;
+        if (body.topicId && body.skillId) {
+          posted = await submitMessage(client, body.topicId, buildTrustScoreMessage(body.skillId, score));
+        }
+        return res.status(200).json({ score, posted });
+      }
+
+      // ── HCS-18: RFQ / DISCOVERY BOARD ─────────────────────────
+      case "createRfqBoard": {
+        // open, submit-keyless board (anyone can announce/quote)
+        const topicId = await createTopic(client, hcs18Memo(body.indexed, body.ttl));
+        return res.status(200).json({ topicId, memo: hcs18Memo(body.indexed, body.ttl) });
+      }
+      case "rfqAnnounce": {
+        return res.status(200).json(await submitMessage(client, body.boardTopicId, buildHCS18Announce(body.petal, body.capabilities, body.uaid, body.valid_for)));
+      }
+      case "rfqPropose": {
+        // the open audit job — its seq# is the RFQ id
+        const r = await submitMessage(client, body.boardTopicId, buildHCS18Propose(body.members ?? [], body.config, body.existing_flora));
+        return res.status(200).json({ ...r, proposal_seq: r.sequenceNumber });
+      }
+      case "rfqRespond": {
+        // auditor quote (decision accept/reject)
+        return res.status(200).json(await submitMessage(client, body.boardTopicId, buildHCS18Respond(body.proposal_seq, body.decision, body.reason, body.accepted_seq)));
+      }
+      case "rfqComplete": {
+        // requester selects + links the HCS-16 Flora room
+        return res.status(200).json(await submitMessage(client, body.boardTopicId, buildHCS18Complete(body.proposal_seq, body.flora_account_id, body.topics)));
+      }
+      case "rfqWithdraw": {
+        return res.status(200).json(await submitMessage(client, body.boardTopicId, buildHCS18Withdraw(body.announce_seq, body.reason)));
+      }
+      case "rfqList": {
+        return res.status(200).json({ messages: await readTopicMessages(body.boardTopicId, body.limit ?? 1000) });
+      }
+
+      // ── HCS-16: FLORA COMMS ROOM ──────────────────────────────
+      case "createFlora": {
+        const floraAccountId = body.floraAccountId ?? getOperatorKey().publicKey.toString();
+        const fid = body.floraAccountId ?? "mars-flora";
+        const communication = await createTopic(client, hcs16Memo(fid, 0), submitKey);
+        const transaction = await createTopic(client, hcs16Memo(fid, 1), submitKey);
+        const state = await createTopic(client, hcs16Memo(fid, 2), submitKey);
+        await submitMessage(client, communication, buildHCS16FloraCreated(floraAccountId, communication, transaction, state));
+        return res.status(200).json({ floraAccountId, topics: { communication, transaction, state } });
+      }
+      case "floraChat": {
+        return res.status(200).json(await submitMessage(client, body.commsTopicId, buildHCS16Chat(body.senderId, body.floraAccountId, body.data)));
+      }
+      case "floraRead": {
+        return res.status(200).json({ messages: await readTopicMessages(body.topicId, body.limit ?? 1000) });
+      }
+
+      // ── HCS-11: AGENT PROFILE ─────────────────────────────────
+      case "createProfile": {
+        const profileTopicId = await createTopic(client, `hcs-11:profile:${body.accountId}`, submitKey);
+        const profile = buildHCS11Profile(
+          body.displayName,
+          body.accountId,
+          body.capabilities ?? [1, 2, 11, 16, 18, 20],
+          body.model ?? "mars-auditor-v1",
+          { bio: body.bio, creator: body.creator }
+        );
+        await submitMessage(client, profileTopicId, profile);
+        return res.status(200).json({ profileTopicId, accountMemo: hcs11AccountMemo(profileTopicId), profile: JSON.parse(profile) });
+      }
+
+      // ── HCS-20: REPUTATION POINTS / REVIEWS ───────────────────
+      case "reputationDeploy": {
+        const topicId = body.topicId ?? (await createTopic(client, HCS20_MEMO, submitKey));
+        const r = await submitMessage(client, topicId, buildHCS20Deploy(body.name, body.tick, body.max, body.lim));
+        return res.status(200).json({ topicId, ...r });
+      }
+      case "reputationMint": {
+        return res.status(200).json(await submitMessage(client, body.topicId, buildHCS20Mint(body.tick, body.amt, body.to, body.m)));
+      }
+      case "reputationTransfer": {
+        return res.status(200).json(await submitMessage(client, body.topicId, buildHCS20Transfer(body.tick, body.amt, body.from, body.to, body.m)));
+      }
+      case "reputationBurn": {
+        return res.status(200).json(await submitMessage(client, body.topicId, buildHCS20Burn(body.tick, body.amt, body.from, body.m)));
+      }
+      case "reputationBalance": {
+        return res.status(200).json(computeHCS20Balances(await readTopicMessages(body.topicId, body.limit ?? 1000)));
+      }
+
+      // ── HCS-20 VOTING (good / bad → aggregate → remove) ───────
+      case "reputationVotingDeploy": {
+        // one topic, two tickers: good (upvotes) + bad (downvotes)
+        const topicId = body.topicId ?? (await createTopic(client, HCS20_MEMO, submitKey));
+        const up = body.upTick ?? "good";
+        const down = body.downTick ?? "bad";
+        const max = body.max ?? "1000000";
+        const lim = body.lim ?? "1000";
+        await submitMessage(client, topicId, buildHCS20Deploy("MARS upvotes", up, max, lim));
+        await submitMessage(client, topicId, buildHCS20Deploy("MARS downvotes", down, max, lim));
+        return res.status(200).json({ topicId, upTick: up, downTick: down });
+      }
+      case "voteGood": {
+        return res.status(200).json(await submitMessage(client, body.topicId, buildHCS20Mint(body.upTick ?? "good", body.amt ?? "1", body.target, body.m)));
+      }
+      case "voteBad": {
+        return res.status(200).json(await submitMessage(client, body.topicId, buildHCS20Mint(body.downTick ?? "bad", body.amt ?? "1", body.target, body.m)));
+      }
+      case "removeVote": {
+        // undo a vote → burn from the good or bad tick
+        return res.status(200).json(await submitMessage(client, body.topicId, buildHCS20Burn(body.tick, body.amt ?? "1", body.target, body.m)));
+      }
+      case "reputationScore": {
+        const scores = computeReputation(await readTopicMessages(body.topicId, body.limit ?? 1000), body.upTick ?? "good", body.downTick ?? "bad");
+        return res.status(200).json({ scores });
+      }
+
+      // ── REVIEWS & RATINGS ─────────────────────────────────────
+      case "createReviewBoard": {
+        const topicId = await createTopic(client, "mars-reviews", submitKey);
+        return res.status(200).json({ topicId });
+      }
+      case "postReview": {
+        return res.status(200).json(await submitMessage(client, body.topicId, buildReview(body)));
+      }
+      case "listReviews": {
+        return res.status(200).json({ reviews: computeReviews(await readTopicMessages(body.topicId, body.limit ?? 1000)) });
+      }
+
+      // ── MARS AUDIT TRAIL ──────────────────────────────────────
+      case "createAuditTrail": {
+        const topicId = await createTopic(client, `mars-audit:${body.skillId ?? "skill"}`, submitKey);
+        return res.status(200).json({ topicId });
+      }
+      case "auditStep": {
+        return res.status(200).json(await submitMessage(client, body.topicId, buildAuditStep(body.skillId, body.step, body.status, body.detail)));
+      }
+      case "auditVerdict": {
+        return res.status(200).json(await submitMessage(client, body.topicId, buildAuditVerdict(body.skillId, body.verdict, body.trustScore, body.reportHrl, body.attestation)));
+      }
+
+      // ── SCHEDULE: RE-AUDIT ────────────────────────────────────
+      case "scheduleReAudit": {
+        return res.status(200).json(await scheduleReAudit(client, body.auditTrailTopicId, body.payload, body.memo));
+      }
+
+      default:
+        return res.status(400).json({
+          error: `Unknown action "${action}".`,
+          actions: [
+            "createAccount",
+            "createTopic / submitMessage / readTopic",
+            "createVerifiedCollection / createLicenseCollection / mintNft / associateToken / transferNft",
+            "uploadReport / downloadReport",
+            "createRegistry / registerInRegistry / readRegistry",
+            "createMainRegistry / registerAgent / startJob / updateJob / readMainRegistry",
+            "createSkillsRegistry / createVersionRegistry / registerSkill / registerVersion / uploadManifest",
+            "trustScore",
+            "createRfqBoard / rfqAnnounce / rfqPropose / rfqRespond / rfqComplete / rfqWithdraw / rfqList",
+            "createFlora / floraChat / floraRead",
+            "createProfile",
+            "reputationDeploy / reputationMint / reputationTransfer / reputationBurn / reputationBalance",
+            "reputationVotingDeploy / voteGood / voteBad / removeVote / reputationScore",
+            "createReviewBoard / postReview / listReviews",
+            "createAuditTrail / auditStep / auditVerdict",
+            "scheduleReAudit",
+          ],
+        });
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(500).json({ error: message });
+  } finally {
+    client?.close();
+  }
+}
