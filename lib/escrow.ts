@@ -27,6 +27,13 @@ export const GATEWAY_WALLET =
   "0x0077777d7EBA4688BDeF3E311b846F25870A19B9" as const;
 export const GATEWAY_DOMAIN = 26; // Arc domain id (for Gateway balance lookups)
 
+// x402 / Gateway batched-payment params (client-safe; used to sign EIP-3009 in-browser).
+export const X402_NETWORK = "eip155:5042002";
+export const X402_PRICE_BASE_UNITS = "10000"; // 0.01 USDC (6 decimals)
+export const X402_MAX_TIMEOUT = 604900; // ~7 days + buffer (Gateway minimum is 7 days)
+export const GATEWAY_BATCHED_NAME = "GatewayWalletBatched";
+export const GATEWAY_BATCHED_VERSION = "1";
+
 export const GATEWAY_WALLET_ABI = [
   {
     type: "function",
