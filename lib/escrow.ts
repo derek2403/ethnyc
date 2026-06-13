@@ -22,6 +22,24 @@ export const ESCROW_ADDRESS =
 
 export const USDC_DECIMALS = 6;
 
+// Circle Gateway Wallet on Arc (deposit here once to "register" as a Gateway account).
+export const GATEWAY_WALLET =
+  "0x0077777d7EBA4688BDeF3E311b846F25870A19B9" as const;
+export const GATEWAY_DOMAIN = 26; // Arc domain id (for Gateway balance lookups)
+
+export const GATEWAY_WALLET_ABI = [
+  {
+    type: "function",
+    name: "deposit",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [],
+  },
+] as const;
+
 export const USDC_ABI = [
   {
     type: "function",
