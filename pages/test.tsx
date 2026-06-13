@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import {
   useAccount,
   useChainId,
+  usePublicClient,
   useReadContract,
   useSwitchChain,
   useWaitForTransactionReceipt,
@@ -12,6 +13,8 @@ import { formatUnits, parseUnits } from "viem";
 import {
   ESCROW_ABI,
   ESCROW_ADDRESS,
+  GATEWAY_WALLET,
+  GATEWAY_WALLET_ABI,
   STATUS_LABELS,
   USDC_ABI,
   USDC_ADDRESS,
@@ -58,7 +61,13 @@ export default function EscrowTest() {
     paid?: string;
     tx?: string;
     skill?: { verifiedLink?: string; skill?: { name?: string; version?: string } };
+    payTo?: string;
+    jobId?: number;
   }>({});
+  const [payJobId, setPayJobId] = useState("");
+  const [reg, setReg] = useState<{ busy?: boolean; error?: string; done?: boolean; tx?: string }>({});
+  const [regAmt, setRegAmt] = useState("0.2");
+  const [gwBal, setGwBal] = useState<string | null>(null);
 
   // ---- reads ----
   const usdcBal = useReadContract({
@@ -88,6 +97,8 @@ export default function EscrowTest() {
 
   // ---- writes ----
   const { writeContract, data: hash, isPending, error: writeError } = useWriteContract();
+  const publicClient = usePublicClient();
+  const { writeContractAsync: writeRegister } = useWriteContract();
   const { data: receipt, isLoading: confirming, error: receiptError } =
     useWaitForTransactionReceipt({ hash });
   const succeeded = receipt?.status === "success";
@@ -149,17 +160,68 @@ export default function EscrowTest() {
 
   // Agent pays per-use for a verified skill via x402 nanopayment (server-side, gas-free).
   const buySkill = async () => {
+    const jid = Number(payJobId || jobId);
+    if (!jid) {
+      setX402({ error: "enter a job # to pay its creator" });
+      return;
+    }
     setX402({ busy: true });
     try {
-      const res = await fetch("/api/buy-skill", { method: "POST" });
+      const res = await fetch("/api/buy-skill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId: jid }),
+      });
       const data = await res.json();
       if (!res.ok || !data.ok) {
         setX402({ error: data.error || "payment failed" });
         return;
       }
-      setX402({ paid: data.paid, tx: data.tx, skill: data.skill });
+      setX402({ paid: data.paid, tx: data.tx, skill: data.skill, payTo: data.payTo, jobId: data.jobId });
     } catch (e) {
       setX402({ error: String(e) });
+    }
+  };
+
+  // Read the connected wallet's Circle Gateway balance (proof of registration).
+  const fetchGwBal = useCallback(async () => {
+    if (!address) {
+      setGwBal(null);
+      return;
+    }
+    try {
+      const r = await fetch(`/api/gateway-balance?address=${address}`);
+      const d = await r.json();
+      setGwBal(d.available ?? "0");
+    } catch {
+      setGwBal(null);
+    }
+  }, [address]);
+
+  useEffect(() => {
+    fetchGwBal();
+  }, [fetchGwBal]);
+
+  // One-time: register this wallet with Circle Gateway (approve + deposit).
+  const registerGateway = async () => {
+    if (!address || !publicClient) return;
+    setReg({ busy: true });
+    try {
+      const amt = parseUnits(regAmt || "0.2", USDC_DECIMALS);
+      const approveHash = await writeRegister({
+        address: USDC_ADDRESS, abi: USDC_ABI, functionName: "approve", args: [GATEWAY_WALLET, amt],
+      });
+      await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      const depositHash = await writeRegister({
+        address: GATEWAY_WALLET, abi: GATEWAY_WALLET_ABI, functionName: "deposit", args: [USDC_ADDRESS, amt], gas: 120000n,
+      });
+      await publicClient.waitForTransactionReceipt({ hash: depositHash });
+      setReg({ done: true, tx: depositHash });
+      fetchGwBal();
+      usdcBal.refetch();
+    } catch (e) {
+      const err = e as { shortMessage?: string; message?: string };
+      setReg({ error: err.shortMessage || err.message || "register failed" });
     }
   };
 
@@ -185,8 +247,8 @@ export default function EscrowTest() {
 
   return (
     <div className="min-h-screen bg-black px-6 py-10 font-sans text-zinc-100">
-      <div className="mx-auto flex max-w-3xl flex-col gap-5">
-        <header className="flex flex-wrap items-start justify-between gap-3">
+      <div className="mx-auto grid max-w-6xl grid-cols-1 items-start gap-5 lg:grid-cols-2">
+        <header className="flex flex-wrap items-start justify-between gap-3 lg:col-span-2">
           <div>
             <h1 className="text-2xl font-semibold">MARS Escrow — Arc Testnet</h1>
             <p className="mt-1 text-sm text-zinc-400">
@@ -199,7 +261,7 @@ export default function EscrowTest() {
         </header>
 
         {mounted && isConnected && !onArc && (
-          <div className="flex items-center justify-between rounded-xl border border-amber-700/50 bg-amber-900/20 p-4 text-sm text-amber-200">
+          <div className="flex items-center justify-between rounded-xl border border-amber-700/50 bg-amber-900/20 p-4 text-sm text-amber-200 lg:col-span-2">
             <span>Wrong network — switch to Arc Testnet ({arcTestnet.id}).</span>
             <button onClick={() => switchChain({ chainId: arcTestnet.id })}
               className="rounded-md bg-amber-600 px-3 py-1.5 font-medium text-white hover:bg-amber-500">
@@ -209,14 +271,14 @@ export default function EscrowTest() {
         )}
 
         {!mounted || !isConnected ? (
-          <div className={`${card} text-sm text-zinc-400`}>
+          <div className={`${card} text-sm text-zinc-400 lg:col-span-2`}>
             Connect a wallet to begin. Need test USDC? Get it from{" "}
             <a className="text-indigo-400 hover:underline" href="https://faucet.circle.com" target="_blank" rel="noreferrer">faucet.circle.com</a> (Arc Testnet).
           </div>
         ) : (
           <>
             {/* balances */}
-            <div className={card}>
+            <div className={`${card} lg:col-span-2`}>
               <div className="mb-3 flex items-center justify-between">
                 <span className={label}>Balances</span>
                 <button onClick={refetchAll} className="rounded-md bg-zinc-700 px-3 py-1.5 text-sm text-white hover:bg-zinc-600">Refresh</button>
@@ -230,6 +292,40 @@ export default function EscrowTest() {
                 <Stat k="Escrow"><a className="text-indigo-400 hover:underline" href={explorerAddress(ESCROW_ADDRESS)} target="_blank" rel="noreferrer">{short(ESCROW_ADDRESS)}</a></Stat>
                 <Stat k="Next job id">{Number(nextJobId.data ?? 1n)}</Stat>
               </div>
+            </div>
+
+            {/* 0 register with gateway */}
+            <div className={`${card} lg:col-span-2`}>
+              <p className="mb-1 text-sm font-medium text-zinc-300">0 · Register this wallet with Circle Gateway (one-time)</p>
+              <p className="mb-3 text-xs text-zinc-500">
+                Deposits USDC into Gateway so this address can <strong>pay</strong> and <strong>receive</strong> x402
+                nanopayments. Needed once per wallet — pops 2 confirmations (approve + deposit).
+              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <input className={input} value={regAmt} onChange={(e) => setRegAmt(e.target.value)} />
+                <button
+                  onClick={registerGateway}
+                  disabled={reg.busy || !onArc}
+                  className="rounded-md bg-sky-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-sky-500 disabled:opacity-40"
+                >
+                  {reg.busy ? "registering…" : "Register / deposit"}
+                </button>
+                <span className="text-sm text-zinc-400">
+                  Gateway balance: <span className="font-medium text-zinc-100">{gwBal ?? "…"}</span> USDC
+                </span>
+                <button onClick={fetchGwBal} className="text-xs text-indigo-400 hover:underline">refresh</button>
+              </div>
+              {reg.error && (
+                <p className="mt-3 rounded-md border border-rose-800/50 bg-rose-900/30 p-2 text-sm text-rose-300">{reg.error}</p>
+              )}
+              {reg.done && (
+                <p className="mt-3 text-sm text-emerald-300">
+                  ✓ Registered — this wallet now has a Gateway account.{" "}
+                  {reg.tx && (
+                    <a className="text-indigo-400 hover:underline" href={explorerTx(reg.tx)} target="_blank" rel="noreferrer">tx ↗</a>
+                  )}
+                </p>
+              )}
             </div>
 
             {/* 1 approve */}
@@ -330,7 +426,7 @@ export default function EscrowTest() {
             </div>
 
             {/* function reference */}
-            <div className={card}>
+            <div className={`${card} lg:col-span-2`}>
               <p className="mb-3 text-sm font-medium text-zinc-300">What each function does</p>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
@@ -376,7 +472,7 @@ export default function EscrowTest() {
 
         {/* 5 · agent pays per-use for a verified skill (x402 nanopayment) */}
         {mounted && (
-          <div className="rounded-xl border border-fuchsia-900/50 bg-fuchsia-950/20 p-4">
+          <div className="rounded-xl border border-fuchsia-900/50 bg-fuchsia-950/20 p-4 lg:col-span-2">
             <p className="mb-1 text-sm font-medium text-zinc-200">5 · Use a verified skill — pay-per-use (x402 nanopayment)</p>
             <p className="mb-3 text-xs text-zinc-500">
               Your AI <strong>agent</strong> pays 0.01 USDC <strong>gas-free</strong> via Circle Gateway (x402) to unlock the
