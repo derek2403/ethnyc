@@ -14,10 +14,12 @@ export const USDC_ASSET = "0x3600000000000000000000000000000000000000"; // USDC 
 export const GATEWAY_WALLET = "0x0077777d7EBA4688BDeF3E311b846F25870A19B9"; // verifyingContract for EIP-712
 
 // The skill's seller / treasury. MUST differ from the agent buyer (else Gateway
-// rejects it as a self_transfer). Hardhat account #1 — a well-known distinct
-// address; the per-use fee lands in its Gateway balance. Swap for the real
-// developer/auditor payout address in production.
-export const SKILL_SELLER = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+// rejects it as self_transfer) AND must be a REGISTERED Gateway account — i.e. it
+// has deposited into Gateway at least once. An unregistered recipient is rejected
+// as "unauthorized". This address was registered via a one-time deposit; the
+// per-use fee lands in its Gateway balance. Swap for the real developer/auditor
+// payout address (after it deposits once) in production.
+export const SKILL_SELLER = "0x8864efd5fA1f434699c12D5afbF16746F95CD965";
 
 export const PRICE_DISPLAY = "0.01"; // USDC per use
 export const PRICE_BASE_UNITS = "10000"; // 0.01 * 1e6
@@ -30,13 +32,14 @@ export function getAgentKey(): `0x${string}` {
 }
 
 // The single x402 payment option the seller accepts (Circle Gateway batched, USDC on Arc).
-export function skillRequirement() {
+// payTo defaults to SKILL_SELLER but can be overridden per job (the job's creator).
+export function skillRequirement(payTo: string = SKILL_SELLER) {
   return {
     scheme: "exact",
     network: NETWORK,
     asset: USDC_ASSET,
     amount: PRICE_BASE_UNITS,
-    payTo: SKILL_SELLER,
+    payTo,
     maxTimeoutSeconds: 604900, // ~7 days + buffer (Gateway minimum is 7 days)
     extra: {
       name: "GatewayWalletBatched",
