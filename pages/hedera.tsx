@@ -4,10 +4,10 @@ import Head from "next/head";
 
 // ── action body templates (edit before sending) ─────────────────────────────
 const TEMPLATES: Record<string, Record<string, unknown>> = {
-  createAccount: { action: "createAccount", initialBalance: 5 },
+  createAccount: { action: "createAccount", initialBalance: 5, worldAddress: "0x… (optional World-verified wallet)" },
 
   createMainRegistry: { action: "createMainRegistry" },
-  registerAgent: { action: "registerAgent", registryTopicId: "0.0.x", role: "auditor", name: "Auditor-1", bio: "wallet-drain specialist" },
+  registerAgent: { action: "registerAgent", registryTopicId: "0.0.x", role: "auditor", name: "Auditor-1", bio: "wallet-drain specialist", worldAddress: "0x… (optional World-verified wallet)" },
   startJob: { action: "startJob", registryTopicId: "0.0.x", skill: "price-checker", requester: "0.0.y", scope: "audit price-checker v1" },
   updateJob: { action: "updateJob", registryTopicId: "0.0.x", jobId: "0.0.z", status: "verified", auditor: "0.0.a", verdict: "SAFE", trustScore: 92 },
   readMainRegistry: { action: "readMainRegistry", registryTopicId: "0.0.x" },

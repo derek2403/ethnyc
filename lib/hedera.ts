@@ -877,6 +877,8 @@ export function buildAgentRegistered(p: {
   name: string;
   profileTopicId?: string;
   evmAddress?: string;
+  worldVerified?: boolean; // World ID agentkit: is the agent's address human-backed?
+  humanId?: string | null; // World AgentBook human id (anti-sybil)
 }): string {
   return JSON.stringify({
     p: "mars-registry",
@@ -886,6 +888,8 @@ export function buildAgentRegistered(p: {
     name: p.name,
     ...(p.profileTopicId && { profile_topic_id: p.profileTopicId }),
     ...(p.evmAddress && { evm_address: p.evmAddress }),
+    ...(p.worldVerified != null && { world_verified: p.worldVerified }),
+    ...(p.humanId && { human_id: p.humanId }),
     timestamp: new Date().toISOString(),
   });
 }
@@ -950,6 +954,8 @@ export function computeRegistry(messages: MirrorMessage[]): RegistryView {
         name: m.name,
         profile_topic_id: m.profile_topic_id,
         evm_address: m.evm_address,
+        world_verified: m.world_verified,
+        human_id: m.human_id,
         _seq: m._seq,
       };
     } else if (m.op === "job_posted") {

@@ -76,11 +76,23 @@ import {
   buildAuditVerdict,
   scheduleReAudit,
 } from "@/lib/hedera";
+import { checkAgentHuman } from "@/lib/world-agentkit";
 
 export const config = {
   api: { bodyParser: { sizeLimit: "5mb" } }, // audit reports / manifests can be large
   maxDuration: 60, // multi-step Hedera txns (NFT create+mint, chunked upload)
 };
+
+// World ID agentkit: is an address human-backed? Fails soft — never blocks account creation.
+async function worldCheck(address?: string): Promise<{ worldVerified: boolean; humanId: string | null }> {
+  if (!address) return { worldVerified: false, humanId: null };
+  try {
+    const humanId = await checkAgentHuman(address);
+    return { worldVerified: humanId !== null, humanId };
+  } catch {
+    return { worldVerified: false, humanId: null };
+  }
+}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
@@ -98,7 +110,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     switch (action) {
       // ── ACCOUNTS ──────────────────────────────────────────────
       case "createAccount": {
-        return res.status(200).json(await createAgentAccount(client, body.initialBalance));
+        const acct = await createAgentAccount(client, body.initialBalance);
+        const world = await worldCheck(body.worldAddress ?? acct.evmAddress); // anti-sybil
+        return res.status(200).json({ ...acct, ...world });
       }
 
       // ── GENERIC TOPIC ─────────────────────────────────────────
@@ -159,17 +173,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(200).json({ topicId, memo: hcs2Memo() });
       }
       case "registerAgent": {
-        // create account if none given → give it an HCS-11 profile sub-topic → log it into the main registry
+        // create account if none given → World ID agentkit check → HCS-11 profile sub-topic → log into main registry
         let account = body.accountId;
         let created = null;
         if (!account) {
           created = await createAgentAccount(client, body.initialBalance ?? 5);
           account = created.accountId;
         }
+        // anti-sybil: is this user/auditor agent human-backed? (README §World ID)
+        const world = await worldCheck(body.worldAddress ?? created?.evmAddress);
         const profileTopicId = await createTopic(client, `hcs-11:profile:${account}`, submitKey);
-        await submitMessage(client, profileTopicId, buildHCS11Profile(body.name ?? "agent", account, body.capabilities ?? [1, 2, 11, 16, 18, 20], body.model ?? "mars-v1", { bio: body.bio, creator: "MARS" }));
-        const reg = await submitMessage(client, body.registryTopicId, buildAgentRegistered({ account, role: body.role ?? "auditor", name: body.name ?? "agent", profileTopicId, evmAddress: created?.evmAddress }));
-        return res.status(200).json({ account, evmAddress: created?.evmAddress, profileTopicId, registrySeq: reg.sequenceNumber, newAccount: created });
+        await submitMessage(
+          client,
+          profileTopicId,
+          buildHCS11Profile(body.name ?? "agent", account, body.capabilities ?? [1, 2, 11, 16, 18, 20], body.model ?? "mars-v1", {
+            bio: body.bio,
+            creator: "MARS",
+            properties: { worldVerified: world.worldVerified, ...(world.humanId && { humanId: world.humanId }) },
+          })
+        );
+        const reg = await submitMessage(
+          client,
+          body.registryTopicId,
+          buildAgentRegistered({ account, role: body.role ?? "auditor", name: body.name ?? "agent", profileTopicId, evmAddress: created?.evmAddress, worldVerified: world.worldVerified, humanId: world.humanId })
+        );
+        return res.status(200).json({ account, evmAddress: created?.evmAddress, profileTopicId, registrySeq: reg.sequenceNumber, ...world, newAccount: created });
       }
       case "startJob": {
         // create the job's own audit-trail sub-topic → log the job into the main registry
