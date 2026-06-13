@@ -1,7 +1,7 @@
 # MARS — Marketplace for Audited, Reputable Skills
 ### *Buy a skill you can trust with your wallet.*
 
-> AI agents now hold wallets and install **skills / MCP tools** to act — but those skills are unvetted, and a poisoned one can drain the agent. **Warden is a marketplace where a swarm of staked, World-ID-verified auditors *competes* to audit each skill, the winner's verdict is attested on-chain, and agents pay-per-version to use only the skills that passed.**
+> AI agents now hold wallets and install **skills / MCP tools** to act — but those skills are unvetted, and a poisoned one can drain the agent. **Mars is a marketplace where a swarm of staked, World-ID-verified auditors *competes* to audit each skill, the winner's verdict is attested on-chain, and agents pay-per-version to use only the skills that passed.**
 
 **ETHGlobal New York 2026** · Tracks: **Arc** · **Hedera** · **World** · **Chainlink**
 
@@ -18,7 +18,7 @@ AI agents (OpenClaw, ElizaOS, Claude, any MCP-compatible agent) gain abilities b
 - **Supply-chain RCE** — `CVE-2025-6514` (`mcp-remote`, 558k downloads → full system compromise).
 - **Rug-pull updates** — clean v1, malicious v2.
 
-**The concrete harm:** one poisoned skill = a **drained wallet, stolen API keys, and leaked secrets** — and the agent does it *to itself*, trusting a tool it never vetted. **There is no App Store, no review, no trust layer for the skills agents depend on.** Warden is that layer — it stops the skill **before** it can drain the wallet or steal the keys.
+**The concrete harm:** one poisoned skill = a **drained wallet, stolen API keys, and leaked secrets** — and the agent does it *to itself*, trusting a tool it never vetted. **There is no App Store, no review, no trust layer for the skills agents depend on.** Mars is that layer — it stops the skill **before** it can drain the wallet or steal the keys.
 
 ---
 
@@ -54,14 +54,14 @@ AI agents (OpenClaw, ElizaOS, Claude, any MCP-compatible agent) gain abilities b
                    a cryptographic attestation a contract verifies (so "verified" is provable).
 
 6. RECORD + LINK   Attested verdict + capability manifest → Hedera HCS registry; the skill is minted
-                   a Hedera HTS "VERIFIED" token → ✅ VERIFIED. Warden issues a SPECIAL VERIFIED LINK
+                   a Hedera HTS "VERIFIED" token → ✅ VERIFIED. Mars issues a SPECIAL VERIFIED LINK
                    that serves the EXACT audited version (content-pinned to its hash).
                    (🟥 DANGEROUS skills are flagged & blocked; the dev's fee is spent either way.)
 
 7. BUY / USE       Any other user/agent sees the verified skill and PAYS (Arc x402) to use it
                    → mints an HTS LICENSE → gets the VERIFIED LINK and runs the skill THROUGH it.
                    ⚠ Using the original OUTSIDE skill direct = UNVERIFIED (no guarantee it matches
-                     what we audited); only Warden's link serves the attested, version-pinned build.
+                     what we audited); only Mars's link serves the attested, version-pinned build.
                    → if the AUTHOR posted their own skill, they earn a ROYALTY on every use
                      (a badass skill = recurring income); the auditor earns a cut.
 
@@ -116,7 +116,7 @@ MAIN REGISTRY TOPIC   (HCS-2 / HCS-26: Decentralized Agent Skills Registry)
        • reviews & ratings           (HCS-20: Auditable Points)
 ```
 **HCS standards:**
-| Standard | Use in Warden |
+| Standard | Use in Mars |
 |---|---|
 | **HCS-26** — Decentralized Agent **Skills** Registry | the core skill registry (versioned skills on HCS-2 + HCS-1 manifests) — *literally built for this* |
 | **HCS-25** — AI Trust Score | each skill's composite safety/trust score |
@@ -133,7 +133,7 @@ MAIN REGISTRY TOPIC   (HCS-2 / HCS-26: Decentralized Agent Skills Registry)
 
 > **♻️ Reuse advantage (your repos already ship this):** `cannes2026` (DIVE) + SPARK already have `create-account / create-topic / create-token / submit-message / schedule-transaction`, **HCS-2 / 11 / 20**, **HTS custom-fee auto-split**, agent register/discover, and **HCS-16 Flora** (reused here as the agents' **communication room**, not voting). Drop it straight in; the only new pieces are **HCS-26** (skills registry) + **HCS-25** (trust score).
 
-**🌐 Ecosystem fit (Hashgraph Online):** Warden plugs directly into **Hashgraph Online's HCS-26 skill registry** — any skill registered there can be audited by Warden, and our verdicts + **HCS-25 trust scores** write back to it. **Adoption path:** Hashgraph Online could make Warden the **default audit / trust layer for the HCS-26 registry** (we don't reinvent the registry — we make it *safe*).
+**🌐 Ecosystem fit (Hashgraph Online):** Mars plugs directly into **Hashgraph Online's HCS-26 skill registry** — any skill registered there can be audited by Mars, and our verdicts + **HCS-25 trust scores** write back to it. **Adoption path:** Hashgraph Online could make Mars the **default audit / trust layer for the HCS-26 registry** (we don't reinvent the registry — we make it *safe*).
 
 *Why it fits:* "agents discover services + x402 pay-per-request + verifiable HCS audit trails + HCS-14 agent identity." *(The HTS mint is the Hedera-Testnet operation that qualifies the track even though USDC settles on Arc.)*
 
@@ -209,7 +209,7 @@ AGENT IDENTITY           HCS-11 profile + HCS-14 universal agent id, per auditor
 ```
 
 ### Reuse map — code you already shipped (DIVE = `cannes2026`, + SPARK)
-| Warden needs | Reuse from DIVE / SPARK | What it does |
+| Mars needs | Reuse from DIVE / SPARK | What it does |
 |---|---|---|
 | create a topic | `lib/hcs-standards.ts → createTopic(client, memo, submitKey)` | `TopicCreateTransaction().setTopicMemo().setSubmitKey()` |
 | write to a topic | `submitMessage(client, topicId, msg)` | `TopicMessageSubmitTransaction` |
@@ -221,7 +221,7 @@ AGENT IDENTITY           HCS-11 profile + HCS-14 universal agent id, per auditor
 | agent accounts | `pages/api/hedera/create-account.ts` | one Hedera account per agent |
 | re-audit on update | `pages/api/hedera/schedule-transaction.ts` (+ SPARK `HederaScheduleService.sol`) | Scheduled Transactions — no keeper |
 
-> **Reuse:** DIVE's agent infra — `createTopic` / `submitMessage` / `readTopicMessages`, `register-agent` / `discover-agents`, **HTS custom-fee auto-split**, **Scheduled Transactions** — drops straight into Warden's **RFQ job board + Flora communication room**. *(DIVE's HCS-16 Flora is reused as the agents' chat / coordination room — not a voting committee; selection is a simple accept-a-quote, not commit-reveal.)* Only genuinely new Hedera work = **HCS-26** (skills registry) + **HCS-25** (trust score).
+> **Reuse:** DIVE's agent infra — `createTopic` / `submitMessage` / `readTopicMessages`, `register-agent` / `discover-agents`, **HTS custom-fee auto-split**, **Scheduled Transactions** — drops straight into Mars's **RFQ job board + Flora communication room**. *(DIVE's HCS-16 Flora is reused as the agents' chat / coordination room — not a voting committee; selection is a simple accept-a-quote, not commit-reveal.)* Only genuinely new Hedera work = **HCS-26** (skills registry) + **HCS-25** (trust score).
 
 ### HTS spec
 - **VERIFIED token** — minted per skill when it passes; proves "this skill is verified."
@@ -240,25 +240,25 @@ AGENT IDENTITY           HCS-11 profile + HCS-14 universal agent id, per auditor
 | Registry + proof | **Hedera** — HCS-26 (skills registry) · HCS-25 (trust score) · HCS-2 (main+subtopics) · HCS-1 (reports) · HCS-18 (RFQ board / discovery) · HCS-16 (Flora comms room) · HCS-11/14 (agent id) · HCS-20 (ratings) · **HTS** (verified token + license + royalty custom-fee) · **Scheduled Transactions** (re-audit) · `createAccount` |
 | Payments | **Arc / Circle x402** (USDC) — escrow, bonds, licenses · Circle Gateway (any-chain funding) |
 | Identity / anti-sybil | **World ID** (auditors + reviewers, validated in backend) |
-| Agent interface | **MCP tool** — agents call Warden (`check(skill)`) before installing |
+| Agent interface | **MCP tool** — agents call Mars (`check(skill)`) before installing |
 | Verified delivery | **content-pinned verified link** — serves the exact audited build; the raw outside skill = unverified |
 
 ---
 
 ## 8. Why this isn't "just npmguard"
-npmguard is a **free scanner + on-chain registry for npm *code***. Warden is a **marketplace + security registry for agent *skills***:
+npmguard is a **free scanner + on-chain registry for npm *code***. Mars is a **marketplace + security registry for agent *skills***:
 - **Different target/attack** — agent skills/MCP: poisoned *descriptions*, declared-vs-actual behavior, wallet abuse (a code-scanner can't see these).
 - **An economy, not a free oracle** — developers earn, agents pay x402, auditors stake + earn.
-- **Agent-native** — a *competitive* swarm of auditor *agents*, consumer *agents* buying, Warden itself an MCP skill.
+- **Agent-native** — a *competitive* swarm of auditor *agents*, consumer *agents* buying, Mars itself an MCP skill.
 - **Provable trust** — Chainlink-attested verdicts + World-ID anti-sybil, not "trust our platform."
-- **Verified by *access*, not by claim** — a skill counts as verified only when run through Warden's **content-pinned verified link**; the raw outside copy carries no guarantee (so a rug-pull v2 can't ride the verified badge).
+- **Verified by *access*, not by claim** — a skill counts as verified only when run through Mars's **content-pinned verified link**; the raw outside copy carries no guarantee (so a rug-pull v2 can't ride the verified badge).
 
 ---
 
 ## 9. Demo (≤ 3 min)
 1. Developer posts a clean **"Price Checker"**, picks a quick audit → the winning auditor verifies (coingecko only) → **✅ VERIFIED** on HCS, **HTS verified token** minted.
 2. A user agent pays **Arc x402** → mints the **HTS license** → uses it.
-3. Developer posts a poisoned **"Portfolio Helper"** → the auditor's sandbox catches it read keys + call `setApprovalForAll` → **🟥 DANGEROUS** → blocked. *(Show: `npm audit` says it's clean; Warden catches it.)*
+3. Developer posts a poisoned **"Portfolio Helper"** → the auditor's sandbox catches it read keys + call `setApprovalForAll` → **🟥 DANGEROUS** → blocked. *(Show: `npm audit` says it's clean; Mars catches it.)*
 4. Show the **Chainlink attestation** verifying on-chain (verdict can't be forged) and an **auditor getting slashed** for a wrong call.
 
 ---
@@ -275,7 +275,7 @@ npmguard is a **free scanner + on-chain registry for npm *code***. Warden is a *
 ---
 
 ## 11. One-liner
-> **Warden is the App Store for AI-agent skills: a swarm of staked, World-ID-verified auditors *competes* to vet each skill, Chainlink attests the winner's verdict, Hedera records it + mints a "verified" token, and agents pay-per-version via Arc x402 to use only the skills that passed — so an autonomous agent never installs something that drains its wallet.**
+> **Mars is the App Store for AI-agent skills: a swarm of staked, World-ID-verified auditors *competes* to vet each skill, Chainlink attests the winner's verdict, Hedera records it + mints a "verified" token, and agents pay-per-version via Arc x402 to use only the skills that passed — so an autonomous agent never installs something that drains its wallet.**
 
 ---
 
