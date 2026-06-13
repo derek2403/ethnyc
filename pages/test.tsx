@@ -175,12 +175,40 @@ export default function EscrowTest() {
   };
   const doCreate = () => {
     if (!address) return;
+    if (!agent?.address) { setFlowMsg("agent not loaded yet — Refresh"); return; }
+    setFlowMsg(null);
     setPendingJobId(Number(nextJobId.data ?? 1n));
     setLastAction("createJob");
-    writeContract({ address: ESCROW_ADDRESS, abi: ESCROW_ABI, functionName: "createJob", args: [address, address, amt(fee), amt(bond)] });
+    // developer = you (author), auditor = the agent
+    writeContract({ address: ESCROW_ADDRESS, abi: ESCROW_ABI, functionName: "createJob", args: [address, agent.address as `0x${string}`, amt(fee), amt(bond)] });
   };
-  const doFund = () => { setLastAction("fundFee"); writeContract({ address: ESCROW_ADDRESS, abi: ESCROW_ABI, functionName: "fundFee", args: [BigInt(jobId)] }); };
-  const doBond = () => { setLastAction("postBond"); writeContract({ address: ESCROW_ADDRESS, abi: ESCROW_ABI, functionName: "postBond", args: [BigInt(jobId)] }); };
+  const doFund = () => { setFlowMsg(null); setLastAction("fundFee"); writeContract({ address: ESCROW_ADDRESS, abi: ESCROW_ABI, functionName: "fundFee", args: [BigInt(jobId)] }); };
+  // The agent (auditor) approves + posts the bond, server-side.
+  const doBond = async () => {
+    if (!jobId) return;
+    setBondBusy(true);
+    setFlowMsg(null);
+    try {
+      const res = await fetch("/api/agent-post-bond", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setFlowMsg(data.error || "post bond failed");
+        return;
+      }
+      setLog((l) => [{ action: "postBond (agent)", hash: data.tx, ok: true }, ...l].slice(0, 30));
+      refetchAll();
+      loadJobs();
+      fetchAgent();
+    } catch (e) {
+      setFlowMsg(String(e));
+    } finally {
+      setBondBusy(false);
+    }
+  };
   const doRelease = () => { setLastAction("release"); writeContract({ address: ESCROW_ADDRESS, abi: ESCROW_ABI, functionName: "release", args: [BigInt(jobId)] }); };
   const doSlash = () => {
     const r = (reporter || address) as `0x${string}`;
