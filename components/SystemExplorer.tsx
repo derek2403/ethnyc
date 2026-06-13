@@ -394,7 +394,7 @@ export default function SystemExplorer() {
         overflow: "hidden",
         background: "var(--cell)",
         border: "1px solid var(--hair)",
-        borderRadius: 7,
+        borderRadius: 10,
       }}
     >
       {/* cell header */}
@@ -428,7 +428,7 @@ export default function SystemExplorer() {
                 letterSpacing: ".06em",
                 padding: "5px 9px",
                 cursor: "pointer",
-                borderRadius: 4,
+                borderRadius: 8,
               }}
             >
               ← system
@@ -436,9 +436,9 @@ export default function SystemExplorer() {
           )}
           <span
             style={{
-              fontFamily: "var(--mono)",
-              fontSize: 10,
-              letterSpacing: ".18em",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: ".12em",
               color: isSystem ? "var(--ink-3)" : isA ? "var(--comm)" : "var(--warn)",
               textTransform: "uppercase",
             }}
@@ -647,6 +647,7 @@ export default function SystemExplorer() {
       {/* ENTITY STAT CARD */}
       {hasSelection && sel && (
         <div
+          className="no-bar"
           style={{
             position: "absolute",
             right: 12,
@@ -656,7 +657,7 @@ export default function SystemExplorer() {
             background: "var(--panel)",
             border: "1px solid var(--hair)",
             backdropFilter: "blur(10px)",
-            borderRadius: 6,
+            borderRadius: 10,
             padding: 16,
             zIndex: 8,
             overflow: "auto",
@@ -664,10 +665,10 @@ export default function SystemExplorer() {
         >
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, letterSpacing: ".16em", color: sel.accent, textTransform: "uppercase", whiteSpace: "nowrap" }}>
+              <div style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: ".1em", color: sel.accent, textTransform: "uppercase", whiteSpace: "nowrap" }}>
                 {sel.kind}
               </div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 16, color: "var(--ink)", marginTop: 5, whiteSpace: "nowrap" }}>{sel.title}</div>
+              <div style={{ fontSize: 16, fontWeight: 600, color: "var(--ink)", marginTop: 5, whiteSpace: "nowrap" }}>{sel.title}</div>
             </div>
             <button
               onClick={clearSel}
@@ -681,17 +682,17 @@ export default function SystemExplorer() {
                 fontSize: 13,
                 lineHeight: 1,
                 flex: "none",
-                borderRadius: 4,
+                borderRadius: 8,
               }}
             >
               ×
             </button>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 11 }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--safe)", border: "1px solid rgba(70,177,127,0.4)", padding: "3px 7px", whiteSpace: "nowrap", borderRadius: 3 }}>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--safe)", border: "1px solid rgba(70,177,127,0.4)", padding: "3px 7px", whiteSpace: "nowrap", borderRadius: 6 }}>
               ✓ {sel.verifyLabel}
             </span>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: sel.statusColor, border: "1px solid var(--hair)", padding: "3px 7px", whiteSpace: "nowrap", borderRadius: 3 }}>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: sel.statusColor, border: "1px solid var(--hair)", padding: "3px 7px", whiteSpace: "nowrap", borderRadius: 6 }}>
               {sel.status}
             </span>
           </div>
@@ -703,22 +704,22 @@ export default function SystemExplorer() {
               marginTop: 15,
               background: "var(--hair-soft)",
               border: "1px solid var(--hair-soft)",
-              borderRadius: 4,
+              borderRadius: 8,
               overflow: "hidden",
             }}
           >
             {sel.tiles.map((t, i) => (
               <div key={i} style={{ background: "var(--inset)", padding: "11px 8px" }}>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 16, color: "var(--ink)" }}>{t.value}</div>
-                <div style={{ fontSize: 8.5, letterSpacing: ".06em", color: "var(--ink-3)", textTransform: "uppercase", marginTop: 4, lineHeight: 1.3 }}>{t.label}</div>
+                <div style={{ fontSize: 17, fontWeight: 600, color: "var(--ink)" }}>{t.value}</div>
+                <div style={{ fontSize: 8.5, fontWeight: 500, letterSpacing: ".08em", color: "var(--ink-3)", textTransform: "uppercase", marginTop: 4, lineHeight: 1.3 }}>{t.label}</div>
               </div>
             ))}
           </div>
           <div style={{ marginTop: 15, display: "flex", flexDirection: "column", gap: 11 }}>
             {sel.bars.map((b, i) => (
               <div key={i}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "var(--mono)", fontSize: 10, color: "var(--ink-2)", marginBottom: 5 }}>
-                  <span style={{ textTransform: "uppercase", letterSpacing: ".07em", color: "var(--ink-3)" }}>{b.label}</span>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--ink-2)", marginBottom: 5 }}>
+                  <span style={{ fontWeight: 500, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--ink-3)" }}>{b.label}</span>
                   <span style={{ color: "var(--ink)" }}>{b.value}</span>
                 </div>
                 <div style={{ height: 3, background: "var(--hair-soft)", position: "relative", borderRadius: 2, overflow: "hidden" }}>
@@ -750,7 +751,7 @@ export default function SystemExplorer() {
             background: "var(--panel)",
             border: "1px solid var(--hair)",
             backdropFilter: "blur(10px)",
-            borderRadius: 6,
+            borderRadius: 10,
             padding: 16,
             zIndex: 8,
             display: "flex",
@@ -759,8 +760,8 @@ export default function SystemExplorer() {
         >
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flex: "none" }}>
             <div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 9.5, letterSpacing: ".16em", color: "var(--mars)", textTransform: "uppercase" }}>Network Core</div>
-              <div style={{ fontSize: 16, fontWeight: 500, marginTop: 4 }}>MARS · Live Status</div>
+              <div style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: ".1em", color: "var(--mars)", textTransform: "uppercase" }}>Network Core</div>
+              <div style={{ fontSize: 16, fontWeight: 600, marginTop: 4 }}>MARS · Live Status</div>
             </div>
             <button
               onClick={closeMars}
@@ -774,7 +775,7 @@ export default function SystemExplorer() {
                 fontSize: 13,
                 lineHeight: 1,
                 flex: "none",
-                borderRadius: 4,
+                borderRadius: 8,
               }}
             >
               ×
@@ -788,20 +789,20 @@ export default function SystemExplorer() {
               marginTop: 14,
               background: "var(--hair-soft)",
               border: "1px solid var(--hair-soft)",
-              borderRadius: 4,
+              borderRadius: 8,
               overflow: "hidden",
               flex: "none",
             }}
           >
             {marsStats.map((m, i) => (
               <div key={i} style={{ background: "var(--inset)", padding: "11px 12px" }}>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 16, color: m.color }}>{m.value}</div>
-                <div style={{ fontSize: 8.5, letterSpacing: ".07em", color: "var(--ink-3)", textTransform: "uppercase", marginTop: 4 }}>{m.label}</div>
+                <div style={{ fontSize: 17, fontWeight: 600, color: m.color }}>{m.value}</div>
+                <div style={{ fontSize: 8.5, fontWeight: 500, letterSpacing: ".08em", color: "var(--ink-3)", textTransform: "uppercase", marginTop: 4 }}>{m.label}</div>
               </div>
             ))}
           </div>
           <div style={{ marginTop: 15, display: "flex", alignItems: "center", justifyContent: "space-between", flex: "none" }}>
-            <span style={{ fontSize: 10, letterSpacing: ".16em", color: "var(--ink-3)", textTransform: "uppercase" }}>Audit Trail</span>
+            <span style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: ".1em", color: "var(--ink-3)", textTransform: "uppercase" }}>Audit Trail</span>
             <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--ink-3)" }}>seq {seq}</span>
           </div>
           <div style={{ marginTop: 7, borderTop: "1px solid var(--hair-soft)", paddingTop: 7, flex: 1, minHeight: 0, overflow: "hidden" }}>

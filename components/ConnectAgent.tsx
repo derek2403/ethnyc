@@ -128,7 +128,7 @@ export default function ConnectAgent() {
         overflow: "hidden",
         background: "var(--cell)",
         border: "1px solid var(--hair)",
-        borderRadius: 7,
+        borderRadius: 10,
         display: "flex",
         flexDirection: "column",
       }}
@@ -138,26 +138,26 @@ export default function ConnectAgent() {
           <svg width="14" height="14" viewBox="0 0 24 24" style={{ fill: "none", stroke: "var(--ink-2)", strokeWidth: 1.7, strokeLinecap: "round", strokeLinejoin: "round" }}>
             <path d="M9.5 14.5 L14.5 9.5 M7.5 11 L5 13.5 a3.5 3.5 0 0 0 5 5 l2.5 -2.5 M16.5 13 L19 10.5 a3.5 3.5 0 0 0 -5 -5 l-2.5 2.5" />
           </svg>
-          <span style={{ fontFamily: "var(--mono)", fontSize: 11, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--ink)" }}>Connect Agent</span>
+          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink)" }}>Connect Agent</span>
         </div>
         <span style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--mono)", fontSize: 9.5, color: statusColor }}>
           <span style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor, animation: statusAnim }} />
           {statusText}
         </span>
       </div>
-      <div style={{ flex: 1, minHeight: 0, padding: 16, overflow: "auto" }}>
+      <div className="no-bar" style={{ flex: 1, minHeight: 0, padding: 16, overflow: "auto" }}>
         {/* disconnected */}
         {!connected && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
             <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.55 }}>
               Link your agent to MARS. Have your agent run this to register its World-ID and stream live stats:
             </div>
-            <div style={{ marginTop: 13, width: "75%", border: "1px solid var(--hair)", borderRadius: 6, background: "var(--inset)", overflow: "hidden" }}>
+            <div style={{ marginTop: 13, width: "75%", border: "1px solid var(--hair)", borderRadius: 8, background: "var(--inset)", overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 11px", borderBottom: "1px solid var(--hair-soft)" }}>
-                <span style={{ fontFamily: "var(--mono)", fontSize: 9, letterSpacing: ".1em", color: "var(--ink-3)", textTransform: "uppercase" }}>shell</span>
+                <span style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: ".1em", color: "var(--ink-3)", textTransform: "uppercase" }}>shell</span>
                 <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: copied ? "var(--safe)" : "var(--ink-3)" }}>{copied ? "copied ✓" : ""}</span>
               </div>
-              <pre style={{ margin: 0, padding: "11px 12px", fontFamily: "var(--mono)", fontSize: 10.5, lineHeight: 1.65, color: "var(--ink-2)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+              <pre style={{ margin: 0, padding: "11px 12px", fontFamily: "var(--code)", fontSize: 10.5, lineHeight: 1.65, color: "var(--ink-2)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
                 {CURL_CMD}
               </pre>
             </div>
@@ -173,12 +173,13 @@ export default function ConnectAgent() {
                 background: "var(--mars)",
                 border: "none",
                 color: "#fff",
-                fontFamily: "var(--mono)",
-                fontSize: 11,
-                letterSpacing: ".04em",
+                fontFamily: "var(--sans)",
+                fontSize: 11.5,
+                fontWeight: 500,
+                letterSpacing: ".02em",
                 padding: 11,
                 cursor: "pointer",
-                borderRadius: 6,
+                borderRadius: 8,
               }}
             >
               <span>{handshaking ? "listening for handshake…" : "Copy command & connect →"}</span>
@@ -198,62 +199,62 @@ export default function ConnectAgent() {
               </div>
               <button
                 onClick={disconnect}
-                style={{ background: "none", border: "1px solid var(--hair)", color: "var(--ink-3)", fontFamily: "var(--mono)", fontSize: 9.5, padding: "4px 9px", cursor: "pointer", borderRadius: 4, flex: "none" }}
+                style={{ background: "none", border: "none", color: "var(--danger)", fontFamily: "var(--sans)", fontSize: 10.5, padding: "4px 2px", cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 2, flex: "none" }}
               >
                 disconnect
               </button>
             </div>
-            <div style={{ display: "flex", marginTop: 14, border: "1px solid var(--hair)", borderRadius: 6, overflow: "hidden" }}>
+            <div style={{ display: "flex", marginTop: 14, width: "fit-content", border: "1px solid var(--hair)", borderRadius: 8, overflow: "hidden" }}>
               <button
                 onClick={() => setRole("user")}
                 style={{
-                  flex: 1,
-                  padding: 8,
+                  padding: "5px 16px",
                   border: "none",
                   cursor: "pointer",
-                  fontFamily: "var(--mono)",
+                  fontFamily: "var(--sans)",
                   fontSize: 11,
-                  letterSpacing: ".06em",
+                  fontWeight: 500,
+                  letterSpacing: ".04em",
                   background: role === "user" ? "var(--warn)" : "transparent",
-                  color: role === "user" ? "#0c0c12" : "var(--ink-3)",
+                  color: role === "user" ? "#fff" : "var(--ink-3)",
                 }}
               >
-                USER
+                User
               </button>
               <button
                 onClick={() => setRole("auditor")}
                 style={{
-                  flex: 1,
-                  padding: 8,
+                  padding: "5px 16px",
                   border: "none",
                   borderLeft: "1px solid var(--hair)",
                   cursor: "pointer",
-                  fontFamily: "var(--mono)",
+                  fontFamily: "var(--sans)",
                   fontSize: 11,
-                  letterSpacing: ".06em",
+                  fontWeight: 500,
+                  letterSpacing: ".04em",
                   background: role === "auditor" ? "var(--comm)" : "transparent",
-                  color: role === "auditor" ? "#0c0c12" : "var(--ink-3)",
+                  color: role === "auditor" ? "#fff" : "var(--ink-3)",
                 }}
               >
-                AUDITOR
+                Auditor
               </button>
             </div>
-            <div style={{ marginTop: 7, fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--ink-3)" }}>
-              showing stats as <span style={{ color: roleAccent }}>{role}</span>
+            <div style={{ marginTop: 8, fontSize: 9.5, fontWeight: 500, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--ink-3)" }}>
+              Showing stats as <span style={{ color: roleAccent }}>{role}</span>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 1, marginTop: 13, background: "var(--hair-soft)", border: "1px solid var(--hair-soft)", borderRadius: 4, overflow: "hidden" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 1, marginTop: 13, background: "var(--hair-soft)", border: "1px solid var(--hair-soft)", borderRadius: 8, overflow: "hidden" }}>
               {stats.tiles.map((t, i) => (
                 <div key={i} style={{ background: "var(--inset)", padding: "11px 8px" }}>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: 16, color: "var(--ink)" }}>{t.value}</div>
-                  <div style={{ fontSize: 8.5, letterSpacing: ".06em", color: "var(--ink-3)", textTransform: "uppercase", marginTop: 4, lineHeight: 1.3 }}>{t.label}</div>
+                  <div style={{ fontSize: 17, fontWeight: 600, color: "var(--ink)" }}>{t.value}</div>
+                  <div style={{ fontSize: 8.5, fontWeight: 500, letterSpacing: ".08em", color: "var(--ink-3)", textTransform: "uppercase", marginTop: 4, lineHeight: 1.3 }}>{t.label}</div>
                 </div>
               ))}
             </div>
             <div style={{ marginTop: 13, display: "flex", flexDirection: "column", gap: 10 }}>
               {stats.bars.map((b, i) => (
                 <div key={i}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "var(--mono)", fontSize: 10, color: "var(--ink-2)", marginBottom: 5 }}>
-                    <span style={{ textTransform: "uppercase", letterSpacing: ".07em", color: "var(--ink-3)" }}>{b.label}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--ink-2)", marginBottom: 5 }}>
+                    <span style={{ fontWeight: 500, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--ink-3)" }}>{b.label}</span>
                     <span style={{ color: "var(--ink)" }}>{b.value}</span>
                   </div>
                   <div style={{ height: 3, background: "var(--hair-soft)", borderRadius: 2, position: "relative", overflow: "hidden" }}>

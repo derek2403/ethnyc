@@ -79,7 +79,7 @@ export default function SkillsVerified() {
         overflow: "hidden",
         background: "var(--cell)",
         border: "1px solid var(--hair)",
-        borderRadius: 7,
+        borderRadius: 10,
         display: "flex",
         flexDirection: "column",
       }}
@@ -87,7 +87,7 @@ export default function SkillsVerified() {
       <div style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderBottom: "1px solid var(--hair-soft)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--safe)" }} />
-          <span style={{ fontFamily: "var(--mono)", fontSize: 11, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--ink)" }}>Skills Verified</span>
+          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink)" }}>Skills Verified</span>
         </div>
         <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--safe)" }}>{delta}</span>
       </div>
@@ -98,7 +98,7 @@ export default function SkillsVerified() {
             <div style={{ fontFamily: "var(--mono)", fontSize: 42, fontWeight: 500, color: "var(--ink)", letterSpacing: "-.02em", lineHeight: 1 }}>
               {verified.toLocaleString()}
             </div>
-            <div style={{ fontSize: 10, letterSpacing: ".1em", color: "var(--ink-3)", textTransform: "uppercase", marginTop: 6 }}>verified skills · all-time</div>
+            <div style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: ".1em", color: "var(--ink-3)", textTransform: "uppercase", marginTop: 6 }}>verified skills · all-time</div>
           </div>
           <svg viewBox="0 0 220 46" preserveAspectRatio="none" style={{ width: "100%", height: 46, overflow: "visible" }}>
             <polyline points={sparkArea} style={{ fill: "rgba(70,177,127,0.10)", stroke: "none" }} />
@@ -108,7 +108,7 @@ export default function SkillsVerified() {
         </div>
         {/* recent verdicts */}
         <div style={{ width: 172, flex: "none", borderLeft: "1px solid var(--hair-soft)", paddingLeft: 14, display: "flex", flexDirection: "column", gap: 7 }}>
-          <div style={{ fontSize: 9, letterSpacing: ".12em", color: "var(--ink-3)", textTransform: "uppercase" }}>Recent verdicts</div>
+          <div style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: ".1em", color: "var(--ink-3)", textTransform: "uppercase" }}>Recent verdicts</div>
           {recent.map((r, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", fontSize: 10 }}>
               <span style={{ width: 6, height: 6, border: "1px solid", borderRadius: 1, flex: "none", borderColor: r.color }} />

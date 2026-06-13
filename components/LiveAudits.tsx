@@ -77,7 +77,7 @@ export default function LiveAudits() {
         overflow: "hidden",
         background: "var(--cell)",
         border: "1px solid var(--hair)",
-        borderRadius: 7,
+        borderRadius: 10,
         display: "flex",
         flexDirection: "column",
       }}
@@ -85,7 +85,7 @@ export default function LiveAudits() {
       <div style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderBottom: "1px solid var(--hair-soft)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--warn)", animation: "onlinePulse 2s ease-in-out infinite" }} />
-          <span style={{ fontFamily: "var(--mono)", fontSize: 11, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--ink)" }}>Live Audits</span>
+          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink)" }}>Live Audits</span>
         </div>
         <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--ink-3)" }}>{audits.length} in flight</span>
       </div>
@@ -94,20 +94,19 @@ export default function LiveAudits() {
           const st = Math.min(a.stage, 3);
           const stageColor = st === 3 ? "var(--safe)" : "var(--warn)";
           return (
-            <div key={a.id} className="mars-audit-card" style={{ border: "1px solid var(--hair-soft)", borderRadius: 5, padding: "8px 11px" }}>
+            <div key={a.id} className="mars-audit-card" style={{ border: "1px solid var(--hair-soft)", borderRadius: 8, padding: "8px 11px" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                 <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink)", flex: 1, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
                   {a.skill}
                 </span>
                 <span
                   style={{
-                    fontFamily: "var(--mono)",
                     fontSize: 9,
                     color: TIER_COLORS[a.tier],
                     border: "1px solid var(--hair-soft)",
                     padding: "1.5px 6px",
-                    borderRadius: 3,
-                    letterSpacing: ".04em",
+                    borderRadius: 6,
+                    letterSpacing: ".06em",
                     flex: "none",
                     whiteSpace: "nowrap",
                   }}

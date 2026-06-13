@@ -27,7 +27,7 @@ export default function Page1() {
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link
-          href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap"
           rel="stylesheet"
         />
       </Head>
@@ -111,8 +111,11 @@ export default function Page1() {
           --warn: #b9780f;
           --comm: #2f6fd0;
           --violet: #5b47d6;
-          --sans: "Geist", "Geist Fallback", system-ui, sans-serif;
-          --mono: "Geist Mono", ui-monospace, "SF Mono", monospace;
+          /* Professional sans throughout; --mono is now also Inter (kept as a
+             token so existing references work) — true monospace lives in --code. */
+          --sans: "Inter", system-ui, -apple-system, sans-serif;
+          --mono: "Inter", system-ui, -apple-system, sans-serif;
+          --code: "Geist Mono", ui-monospace, "SF Mono", monospace;
         }
         * {
           box-sizing: border-box;
@@ -127,7 +130,16 @@ export default function Page1() {
           background: radial-gradient(120% 90% at 28% 12%, #ffffff 0%, var(--space) 62%);
           color: var(--ink);
           font-family: var(--sans);
+          font-variant-numeric: tabular-nums;
           -webkit-font-smoothing: antialiased;
+        }
+        /* hide scrollbars on panels that occasionally overflow */
+        .no-bar {
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+        .no-bar::-webkit-scrollbar {
+          display: none;
         }
         @keyframes onlinePulse {
           0%,
