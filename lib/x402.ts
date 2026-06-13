@@ -33,12 +33,12 @@ export function getAgentKey(): `0x${string}` {
 
 // The single x402 payment option the seller accepts (Circle Gateway batched, USDC on Arc).
 // payTo defaults to SKILL_SELLER but can be overridden per job (the job's creator).
-export function skillRequirement(payTo: string = SKILL_SELLER) {
+export function skillRequirement(payTo: string = SKILL_SELLER, amount: string = PRICE_BASE_UNITS) {
   return {
     scheme: "exact",
     network: NETWORK,
     asset: USDC_ASSET,
-    amount: PRICE_BASE_UNITS,
+    amount,
     payTo,
     maxTimeoutSeconds: 604900, // ~7 days + buffer (Gateway minimum is 7 days)
     extra: {
