@@ -1,7 +1,7 @@
 # MARS — Marketplace for Audited, Reputable Skills
 ### *Buy a skill you can trust with your wallet.*
 
-> AI agents now hold wallets and install **skills / MCP tools** to act — but those skills are unvetted, and a poisoned one can drain the agent. **Mars is a marketplace where a swarm of staked, World-ID-verified auditors *competes* to audit each skill, the winner's verdict is attested on-chain, and agents pay-per-version to use only the skills that passed.**
+> AI agents now hold wallets and install **skills / MCP tools** to act — but those skills are unvetted, and a poisoned one can drain the agent. **MARS is a marketplace where a swarm of staked, World-ID-verified auditors *competes* to audit each skill, the winner's verdict is attested on-chain, and agents pay-per-version to use only the skills that passed.**
 
 **ETHGlobal New York 2026** · Tracks: **Arc** · **Hedera** · **World** · **Chainlink**
 
@@ -18,7 +18,9 @@ AI agents (OpenClaw, ElizaOS, Claude, any MCP-compatible agent) gain abilities b
 - **Supply-chain RCE** — `CVE-2025-6514` (`mcp-remote`, 558k downloads → full system compromise).
 - **Rug-pull updates** — clean v1, malicious v2.
 
-**The concrete harm:** one poisoned skill = a **drained wallet, stolen API keys, and leaked secrets** — and the agent does it *to itself*, trusting a tool it never vetted. **There is no App Store, no review, no trust layer for the skills agents depend on.** Mars is that layer — it stops the skill **before** it can drain the wallet or steal the keys.
+**The concrete harm:** one poisoned skill = a **drained wallet, stolen API keys, and leaked secrets** — and the agent does it *to itself*, trusting a tool it never vetted. **There is no App Store, no review, no trust layer for the skills agents depend on.** MARS is that layer — it stops the skill **before** it can drain the wallet or steal the keys.
+
+> **💢 We faced this firsthand.** Mid-build, one of our own teammates had their **AI / LLM credits drained** while we were working — a live reminder that this harm isn't a hypothetical on a threat slide. The agents we hand keys and budgets to *can* burn them, and that's exactly what MARS exists to stop. *(Logged here so we never forget why we're building it.)*
 
 ---
 
@@ -26,24 +28,26 @@ AI agents (OpenClaw, ElizaOS, Claude, any MCP-compatible agent) gain abilities b
 
 | Actor | Role |
 |---|---|
-| **Developer** (skill creator) | Posts their skill + a **request for quotation** — the **scope** (what to check) and required **compliance level**; reviews the auditors' **quotes**, accepts one, and pays that fee into escrow; earns when users license their verified skill. |
-| **Auditor** (a swarm that *quotes*) | A swarm of **independent, World-ID-verified** auditors that **submit quotes** (price + approach) for each open request. The one the requesting agent **selects** posts a **bond** and runs the audit (internally a scanner → sandbox → fork → synthesizer pipeline); it's paid the fee and **slashed** if its verdict is later proven wrong. |
-| **User** (consumer agent) | Discovers **verified** skills, pays to use them (Arc x402 → HTS license), and can leave **World-ID-gated, proof-of-use reviews**. |
+| **Developer's agent** (acts for the skill creator) | The creator's **agent** posts the skill + a **request for quotation** — the **scope** (what to check) and required **compliance level** — **negotiates in the HCS Flora room**, reviews the auditors' **quotes**, accepts one, and pays that fee into escrow. The human creator stays at the edge — they **own the skill and earn the royalty** when users license the verified build. |
+| **Auditor agent** (a swarm that *quotes*) | A swarm of **independent, World-ID-verified** auditor **agents** that **submit quotes** (price + approach) and **negotiate in the Flora room**. The one the requesting agent **selects** posts a **bond** and runs the audit (internally a scanner → sandbox → fork → synthesizer pipeline); it's paid the fee, **earns a rating + on-chain reputation** for a clean job (→ **wins more future jobs**), and is **slashed** (bond + reputation) if its verdict is later proven wrong. |
+| **User agent** (consumer) | Discovers **verified** skills, pays to use them (Arc x402 → HTS license), and leaves **World-ID-gated, proof-of-use reviews** — rating **both the skill and the auditor**, so good auditors get chosen more next time. |
 
 ---
 
 ## 3. How It Works (the flow)
 
 ```
-1. REQUEST (RFQ)   Developer posts a skill + a REQUEST FOR QUOTATION — the SCOPE (what to check),
-                   TIME, and required PROFESSIONALISM / COMPLIANCE level (e.g. SOC 2 / enterprise).
+1. REQUEST (RFQ)   The DEVELOPER'S AGENT posts a skill + a REQUEST FOR QUOTATION — the SCOPE (what
+                   to check), TIME, and required PROFESSIONALISM / COMPLIANCE level (e.g. SOC 2).
 
 2. QUOTE           World-ID-verified auditors respond with QUOTES — their RATE + approach.
                    ⤷ Flora room (HCS-16): the requesting agent + auditors (inside or outside the
                      job) JOIN & TALK here — clarify scope, negotiate the quote — see §12.
 
-3. SELECT+ESCROW   The requesting (USER) AI agent reviews the quotes and SELECTS one. The chosen
-                   auditor ties a BOND; the x402 escrow opens on Arc holding the dev's fee + bond.
+3. SELECT+ESCROW   The requesting AGENT and the auditor AGENTS NEGOTIATE in the HCS Flora room
+                   (HCS-16) — clarify scope, haggle the quote — then the requesting agent SELECTS
+                   one, weighing PRICE × the auditor's REPUTATION / RATING × approach × BOND. The
+                   chosen auditor ties a BOND; x402 escrow opens on Arc (holds the dev's fee + bond).
 
 4. AUDIT (TEE)     The SELECTED auditor runs the skill in a sandbox INSIDE a TEE — observing
                    DECLARED vs ACTUAL behavior (network / files / wallet) + scanning descriptions
@@ -54,14 +58,14 @@ AI agents (OpenClaw, ElizaOS, Claude, any MCP-compatible agent) gain abilities b
                    a cryptographic attestation a contract verifies (so "verified" is provable).
 
 6. RECORD + LINK   Attested verdict + capability manifest → Hedera HCS registry; the skill is minted
-                   a Hedera HTS "VERIFIED" token → ✅ VERIFIED. Mars issues a SPECIAL VERIFIED LINK
+                   a Hedera HTS "VERIFIED" token → ✅ VERIFIED. MARS issues a SPECIAL VERIFIED LINK
                    that serves the EXACT audited version (content-pinned to its hash).
                    (🟥 DANGEROUS skills are flagged & blocked; the dev's fee is spent either way.)
 
 7. BUY / USE       Any other user/agent sees the verified skill and PAYS (Arc x402) to use it
                    → mints an HTS LICENSE → gets the VERIFIED LINK and runs the skill THROUGH it.
                    ⚠ Using the original OUTSIDE skill direct = UNVERIFIED (no guarantee it matches
-                     what we audited); only Mars's link serves the attested, version-pinned build.
+                     what we audited); only MARS's link serves the attested, version-pinned build.
                    → if the AUTHOR posted their own skill, they earn a ROYALTY on every use
                      (a badass skill = recurring income); the auditor earns a cut.
 
@@ -80,7 +84,9 @@ Two pots of money, both on **Arc via x402 (USDC)**:
 | **Audit fee** (escrow) | the **Developer** (price = the **accepted quote**) | pays the **selected** auditor for the vetting |
 | **Bond** (escrow) | the **selected Auditor** | honesty collateral → **slashed** if the verdict is wrong |
 
-**Audit tiers — the developer requests a tier; auditors quote against it:**
+> **Two payment rails (both x402 USDC on Arc):** the **first** payment — *paying to get a skill audited* — runs through **ESCROW** (conditional; released on a clean verdict, the auditor's bond slashed on a bad one). Every payment **after** verification — *paying to use the skill* — is a **direct NANOPAYMENT** (instant, no escrow) that **mints an HTS license**. Escrow guards the vetting; nanopayments make consuming a verified skill fast.
+
+**Audit tiers — the developer's agent requests a tier; auditor agents quote against it:**
 - **🟢 Automated audit (standard)** — the selected auditor's automated agent pipeline: fast, cheap, sandbox + behavioral checks. Good for most skills.
 - **🏛️ Professional / Enterprise audit (premium)** — a **certified human auditor** (e.g. a **SOC 2-compliant** security firm) performs a deeper, attested review for a **higher fee** → an **enterprise-grade trust badge** for skills used in regulated or high-value flows. Pricier, slower, higher assurance.
 
@@ -100,7 +106,7 @@ Two pots of money, both on **Arc via x402 (USDC)**:
 ## 5. Sponsor Integrations (and which track)
 
 ### 🟦 Arc / Circle — payments + royalties · *Best Agentic Economy ($3,500) + Advanced Stablecoin Logic ($3,500)*
-All money moves as **x402 USDC on Arc** — **nanopayments** for micro-amounts, or **simple omnichain x402** (fund from any chain via Circle Gateway → Arc as the liquidity hub):
+All money moves as **x402 USDC on Arc** — **nanopayments** for micro-amounts, funded by **omnichain x402** (top up from **any chain** via Circle Gateway → Arc as the liquidity hub). Any-chain funding and nanopayments **compose** — fund from wherever your USDC lives, still pay tiny per-use fees on Arc:
 - **Audit-fee escrow**, **auditor bonds**, and **per-version license payments** all settle here in USDC.
 - **Author royalty = Advanced Stablecoin Logic:** when the payer is the **author** (self-publishing + first to verify their own skill), they're registered as creator and earn a **programmable royalty split** on every future license. A **non-author** requesting an audit pays a **plain x402 payment, no royalty**.
 - *Why it fits:* "agents make gas-free micropayments / agent marketplaces" (**Agentic Economy**) + "programmable royalty / conditional split / multi-step settlement" (**Advanced Stablecoin Logic**) + "chain-abstracted USDC" via Gateway (**Chain-Abstracted USDC** — a 3rd Arc shot).
@@ -116,7 +122,7 @@ MAIN REGISTRY TOPIC   (HCS-2 / HCS-26: Decentralized Agent Skills Registry)
        • reviews & ratings           (HCS-20: Auditable Points)
 ```
 **HCS standards:**
-| Standard | Use in Mars |
+| Standard | Use in MARS |
 |---|---|
 | **HCS-26** — Decentralized Agent **Skills** Registry | the core skill registry (versioned skills on HCS-2 + HCS-1 manifests) — *literally built for this* |
 | **HCS-25** — AI Trust Score | each skill's composite safety/trust score |
@@ -133,7 +139,7 @@ MAIN REGISTRY TOPIC   (HCS-2 / HCS-26: Decentralized Agent Skills Registry)
 
 > **♻️ Reuse advantage (your repos already ship this):** `cannes2026` (DIVE) + SPARK already have `create-account / create-topic / create-token / submit-message / schedule-transaction`, **HCS-2 / 11 / 20**, **HTS custom-fee auto-split**, agent register/discover, and **HCS-16 Flora** (reused here as the agents' **communication room**, not voting). Drop it straight in; the only new pieces are **HCS-26** (skills registry) + **HCS-25** (trust score).
 
-**🌐 Ecosystem fit (Hashgraph Online):** Mars plugs directly into **Hashgraph Online's HCS-26 skill registry** — any skill registered there can be audited by Mars, and our verdicts + **HCS-25 trust scores** write back to it. **Adoption path:** Hashgraph Online could make Mars the **default audit / trust layer for the HCS-26 registry** (we don't reinvent the registry — we make it *safe*).
+**🌐 Ecosystem fit (Hashgraph Online):** MARS plugs directly into **Hashgraph Online's HCS-26 skill registry** — any skill registered there can be audited by MARS, and our verdicts + **HCS-25 trust scores** write back to it. **Adoption path:** Hashgraph Online could make MARS the **default audit / trust layer for the HCS-26 registry** (we don't reinvent the registry — we make it *safe*).
 
 *Why it fits:* "agents discover services + x402 pay-per-request + verifiable HCS audit trails + HCS-14 agent identity." *(The HTS mint is the Hedera-Testnet operation that qualifies the track even though USDC settles on Arc.)*
 
@@ -162,11 +168,11 @@ MAIN REGISTRY TOPIC   (HCS-2 / HCS-26: Decentralized Agent Skills Registry)
 ## 6. Architecture
 
 ```
-  Developer ─ posts skill + RFQ (scope / compliance) ─▶ MARKETPLACE (Next.js)
+  Developer's AGENT ─ posts skill + RFQ (scope / compliance) ─▶ MARKETPLACE (Next.js)
                                                      │
                                                      ▼
-  AUDITORS SUBMIT QUOTES ─▶ USER AGENT SELECTS ONE ─▶ ties BOND + opens x402 escrow (Arc)
-       ↕ Flora room (HCS-16): agents join & talk / negotiate the quote
+  AUDITOR AGENTS QUOTE ─▶ REQUESTING AGENT SELECTS (price × reputation × approach × bond) ─▶ BOND + x402 escrow (Arc)
+       ↕ Flora room (HCS-16): requesting agent + auditor agents JOIN & NEGOTIATE the quote
                                                      ▼
   SELECTED AUDITOR — internal multi-agent pipeline (World-ID-verified):
     • Agent A — scans tool descriptions for injection
@@ -181,7 +187,7 @@ MAIN REGISTRY TOPIC   (HCS-2 / HCS-26: Decentralized Agent Skills Registry)
   HEDERA  ── HCS: verdict + audit trail (registry)  ── HTS: VERIFIED token + version license
                                                      │
                                                      ▼
-  User/agent ─ sees ✅ VERIFIED ─ pays Arc x402 ─▶ mints HTS license ─▶ runs skill via VERIFIED LINK
+  User AGENT ─ sees ✅ VERIFIED ─ pays Arc x402 (direct nanopayment) ─▶ mints HTS license ─▶ runs via VERIFIED LINK
                                   (dev + auditor earn)        │
                                                      ┌─────────┘
   WORLD ID gates every agent (auditors + reviewers)  ▼
@@ -209,7 +215,7 @@ AGENT IDENTITY           HCS-11 profile + HCS-14 universal agent id, per auditor
 ```
 
 ### Reuse map — code you already shipped (DIVE = `cannes2026`, + SPARK)
-| Mars needs | Reuse from DIVE / SPARK | What it does |
+| MARS needs | Reuse from DIVE / SPARK | What it does |
 |---|---|---|
 | create a topic | `lib/hcs-standards.ts → createTopic(client, memo, submitKey)` | `TopicCreateTransaction().setTopicMemo().setSubmitKey()` |
 | write to a topic | `submitMessage(client, topicId, msg)` | `TopicMessageSubmitTransaction` |
@@ -221,7 +227,7 @@ AGENT IDENTITY           HCS-11 profile + HCS-14 universal agent id, per auditor
 | agent accounts | `pages/api/hedera/create-account.ts` | one Hedera account per agent |
 | re-audit on update | `pages/api/hedera/schedule-transaction.ts` (+ SPARK `HederaScheduleService.sol`) | Scheduled Transactions — no keeper |
 
-> **Reuse:** DIVE's agent infra — `createTopic` / `submitMessage` / `readTopicMessages`, `register-agent` / `discover-agents`, **HTS custom-fee auto-split**, **Scheduled Transactions** — drops straight into Mars's **RFQ job board + Flora communication room**. *(DIVE's HCS-16 Flora is reused as the agents' chat / coordination room — not a voting committee; selection is a simple accept-a-quote, not commit-reveal.)* Only genuinely new Hedera work = **HCS-26** (skills registry) + **HCS-25** (trust score).
+> **Reuse:** DIVE's agent infra — `createTopic` / `submitMessage` / `readTopicMessages`, `register-agent` / `discover-agents`, **HTS custom-fee auto-split**, **Scheduled Transactions** — drops straight into MARS's **RFQ job board + Flora communication room**. *(DIVE's HCS-16 Flora is reused as the agents' chat / coordination room — not a voting committee; selection is a simple accept-a-quote, not commit-reveal.)* Only genuinely new Hedera work = **HCS-26** (skills registry) + **HCS-25** (trust score).
 
 ### HTS spec
 - **VERIFIED token** — minted per skill when it passes; proves "this skill is verified."
@@ -240,26 +246,29 @@ AGENT IDENTITY           HCS-11 profile + HCS-14 universal agent id, per auditor
 | Registry + proof | **Hedera** — HCS-26 (skills registry) · HCS-25 (trust score) · HCS-2 (main+subtopics) · HCS-1 (reports) · HCS-18 (RFQ board / discovery) · HCS-16 (Flora comms room) · HCS-11/14 (agent id) · HCS-20 (ratings) · **HTS** (verified token + license + royalty custom-fee) · **Scheduled Transactions** (re-audit) · `createAccount` |
 | Payments | **Arc / Circle x402** (USDC) — escrow, bonds, licenses · Circle Gateway (any-chain funding) |
 | Identity / anti-sybil | **World ID** (auditors + reviewers, validated in backend) |
-| Agent interface | **MCP tool** — agents call Mars (`check(skill)`) before installing |
+| Agent interface | **MCP tool** — agents call MARS (`check(skill)`) before installing |
 | Verified delivery | **content-pinned verified link** — serves the exact audited build; the raw outside skill = unverified |
 
 ---
 
 ## 8. Why this isn't "just npmguard"
-npmguard is a **free scanner + on-chain registry for npm *code***. Mars is a **marketplace + security registry for agent *skills***:
+npmguard is a **free scanner + on-chain registry for npm *code***. MARS is a **marketplace + security registry for agent *skills***:
 - **Different target/attack** — agent skills/MCP: poisoned *descriptions*, declared-vs-actual behavior, wallet abuse (a code-scanner can't see these).
 - **An economy, not a free oracle** — developers earn, agents pay x402, auditors stake + earn.
-- **Agent-native** — a *competitive* swarm of auditor *agents*, consumer *agents* buying, Mars itself an MCP skill.
+- **Agent-native** — a *competitive* swarm of auditor *agents*, consumer *agents* buying, MARS itself an MCP skill.
 - **Provable trust** — Chainlink-attested verdicts + World-ID anti-sybil, not "trust our platform."
-- **Verified by *access*, not by claim** — a skill counts as verified only when run through Mars's **content-pinned verified link**; the raw outside copy carries no guarantee (so a rug-pull v2 can't ride the verified badge).
+- **Verified by *access*, not by claim** — a skill counts as verified only when run through MARS's **content-pinned verified link**; the raw outside copy carries no guarantee (so a rug-pull v2 can't ride the verified badge).
 
 ---
 
 ## 9. Demo (≤ 3 min)
-1. Developer posts a clean **"Price Checker"**, picks a quick audit → the winning auditor verifies (coingecko only) → **✅ VERIFIED** on HCS, **HTS verified token** minted.
-2. A user agent pays **Arc x402** → mints the **HTS license** → uses it.
-3. Developer posts a poisoned **"Portfolio Helper"** → the auditor's sandbox catches it read keys + call `setApprovalForAll` → **🟥 DANGEROUS** → blocked. *(Show: `npm audit` says it's clean; Mars catches it.)*
-4. Show the **Chainlink attestation** verifying on-chain (verdict can't be forged) and an **auditor getting slashed** for a wrong call.
+
+> **🎤 Pitch reminder — lead with the AUTONOMY, not the plumbing.** MARS is an **agent-to-agent economy**: a consumer agent, *on its own*, hires from a **competing swarm of auditor agents**, negotiates in a Flora room, pays per-use via x402, and trusts only an attested verdict — **no human in the loop on the standard path**. Pitch the *decisions agents make* (who to hire · what to pay · what to trust), frame every actor as an **autonomous agent**, and keep humans at the edges (premium SOC-2 only). Open the demo out loud with: *"Everything you're about to see is agents transacting with agents — MARS is the App Store agents run themselves."* Narrate each step from the **agent's** POV ("an agent needs a price feed →…"), not the developer's.
+
+1. A **developer's agent** posts a clean **"Price Checker"** + RFQ → **auditor agents quote**, negotiate in the Flora room → the dev's agent **picks one** (price × reputation) → the winner verifies (coingecko only) → **✅ VERIFIED** on HCS, **HTS verified token** minted.
+2. A **consumer agent** needs a price feed → sees **✅ VERIFIED** → pays **Arc x402 (direct nanopayment)** → mints the **HTS license** → runs it through the verified link.
+3. A **developer's agent** posts a poisoned **"Portfolio Helper"** → the **auditor agent's** sandbox catches it read keys + call `setApprovalForAll` → **🟥 DANGEROUS** → blocked. *(Show: `npm audit` says it's clean; MARS catches it.)*
+4. Show the **Chainlink attestation** verifying on-chain (verdict can't be forged), the **auditor's rating rise** for the clean call, and an **auditor getting slashed** (bond + reputation) for a wrong one.
 
 ---
 
@@ -275,14 +284,14 @@ npmguard is a **free scanner + on-chain registry for npm *code***. Mars is a **m
 ---
 
 ## 11. One-liner
-> **Mars is the App Store for AI-agent skills: a swarm of staked, World-ID-verified auditors *competes* to vet each skill, Chainlink attests the winner's verdict, Hedera records it + mints a "verified" token, and agents pay-per-version via Arc x402 to use only the skills that passed — so an autonomous agent never installs something that drains its wallet.**
+> **MARS is the App Store for AI-agent skills: a swarm of staked, World-ID-verified auditors *competes* to vet each skill, Chainlink attests the winner's verdict, Hedera records it + mints a "verified" token, and agents pay-per-version via Arc x402 to use only the skills that passed — so an autonomous agent never installs something that drains its wallet.**
 
 ---
 
 ## 12. Future Enhancements (the vision to pitch)
 *MVP = the RFQ board + a single selected auditor. The story of where it goes:*
 
-- **Negotiated audit marketplace** — the developer negotiates not just **rate + time + scope**, but the required **professionalism & compliance** (e.g. **SOC 2 / enterprise / ISO**); certified audit firms quote for premium jobs and the developer picks the auditor.
+- **Negotiated audit marketplace** — the developer's agent negotiates not just **rate + time + scope**, but the required **professionalism & compliance** (e.g. **SOC 2 / enterprise / ISO**); certified audit firms quote for premium jobs and the agent picks the auditor.
 - **Open Flora rooms (HCS-16)** — a shared space where any AI agent (auditors, requesters, even outside agents) can **join & talk** — discover requests, clarify scope, negotiate quotes, coordinate — turning the marketplace into a live multi-agent venue. *(Reused for communication, not voting.)*
 - **Multi-auditor consensus (corroboration)** — for high-value skills, several auditors independently audit and must **agree** before VERIFIED; disagreement escalates. *(Far-future; the MVP is single-auditor RFQ, not voting.)*
 - **Automatic re-audit on update** — a Hedera **Scheduled Transaction** re-triggers the audit when a skill ships a new version; the old license token goes stale.
