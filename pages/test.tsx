@@ -5,6 +5,7 @@ import {
   useChainId,
   usePublicClient,
   useReadContract,
+  useSignTypedData,
   useSwitchChain,
   useWaitForTransactionReceipt,
   useWriteContract,
@@ -13,12 +14,16 @@ import { formatUnits, parseUnits } from "viem";
 import {
   ESCROW_ABI,
   ESCROW_ADDRESS,
+  GATEWAY_BATCHED_NAME,
+  GATEWAY_BATCHED_VERSION,
   GATEWAY_WALLET,
   GATEWAY_WALLET_ABI,
   STATUS_LABELS,
   USDC_ABI,
   USDC_ADDRESS,
   USDC_DECIMALS,
+  X402_MAX_TIMEOUT,
+  X402_NETWORK,
   arcTestnet,
   explorerAddress,
   explorerTx,
@@ -26,15 +31,6 @@ import {
 
 const short = (a?: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "—");
 const fmt = (v?: bigint) => (v == null ? "—" : formatUnits(v, USDC_DECIMALS));
-
-const FUNCS = [
-  { n: "Approve", call: "USDC.approve(escrow, amount)", does: "Let the escrow pull your USDC.", needs: "—" },
-  { n: "Create job", call: "createJob(dev, auditor, fee, bond)", does: "Open a job → status Open.", needs: "—" },
-  { n: "Fund fee", call: "fundFee(jobId)", does: "Developer locks the fee in escrow.", needs: "allowance ≥ fee · status Open" },
-  { n: "Post bond", call: "postBond(jobId)", does: "Auditor locks the bond in escrow.", needs: "allowance ≥ bond · status Open" },
-  { n: "Release", call: "release(jobId)", does: "Pay fee + bond to auditor → Settled.", needs: "status Funded" },
-  { n: "Slash", call: "slash(jobId, reporter)", does: "Bond → reporter, fee → developer → Slashed.", needs: "status Funded" },
-];
 
 export default function EscrowTest() {
   // avoid SSR/hydration mismatch from wallet state
@@ -52,22 +48,33 @@ export default function EscrowTest() {
   const [fee, setFee] = useState("1");
   const [bond, setBond] = useState("0.5");
   const [reporter, setReporter] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
   const [lastAction, setLastAction] = useState("");
   const [loggedHash, setLoggedHash] = useState<string | undefined>();
   const [log, setLog] = useState<{ action: string; hash: string; ok: boolean }[]>([]);
   const [x402, setX402] = useState<{
     busy?: boolean;
     error?: string;
-    paid?: string;
-    tx?: string;
-    skill?: { verifiedLink?: string; skill?: { name?: string; version?: string } };
-    payTo?: string;
     jobId?: number;
+    agent?: string;
+    author?: string;
+    auditor?: string;
+    authorPct?: number;
+    total?: string;
+    payments?: { role: string; to: string; amount: string; tx: string }[];
+    verifiedLink?: string;
   }>({});
   const [payJobId, setPayJobId] = useState("");
+  const [split, setSplit] = useState(80); // author %
+  const [bals, setBals] = useState<Record<string, { available?: string; pending?: string }>>({});
+  const [jobs, setJobs] = useState<
+    { id: number; developer: string; auditor: string; fee: bigint; bond: bigint; feeFunded: boolean; bondPosted: boolean; status: number }[]
+  >([]);
   const [reg, setReg] = useState<{ busy?: boolean; error?: string; done?: boolean; tx?: string }>({});
   const [regAmt, setRegAmt] = useState("0.2");
   const [gwBal, setGwBal] = useState<string | null>(null);
+  const [gwPending, setGwPending] = useState<string | null>(null);
+  const [agent, setAgent] = useState<{ address?: string; walletUsdc?: string; gatewayAvailable?: string; gatewayPending?: string } | null>(null);
 
   // ---- reads ----
   const usdcBal = useReadContract({
@@ -99,6 +106,7 @@ export default function EscrowTest() {
   const { writeContract, data: hash, isPending, error: writeError } = useWriteContract();
   const publicClient = usePublicClient();
   const { writeContractAsync: writeRegister } = useWriteContract();
+  const { signTypedDataAsync } = useSignTypedData();
   const { data: receipt, isLoading: confirming, error: receiptError } =
     useWaitForTransactionReceipt({ hash });
   const succeeded = receipt?.status === "success";
@@ -118,6 +126,26 @@ export default function EscrowTest() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receipt, hash]);
+
+  // Load all jobs from the escrow (for the live sidebar), newest first. Reloads after each tx.
+  const loadJobs = useCallback(async () => {
+    if (!publicClient) return;
+    const n = Number(nextJobId.data ?? 1n);
+    const ids = Array.from({ length: Math.max(0, n - 1) }, (_, i) => i + 1);
+    const rows = await Promise.all(
+      ids.map((id) =>
+        publicClient
+          .readContract({ address: ESCROW_ADDRESS, abi: ESCROW_ABI, functionName: "getJob", args: [BigInt(id)] })
+          .then((j) => ({ id, ...j }))
+          .catch(() => null),
+      ),
+    );
+    setJobs(rows.filter((r): r is NonNullable<typeof r> => r !== null).reverse());
+  }, [publicClient, nextJobId.data]);
+
+  useEffect(() => {
+    loadJobs();
+  }, [loadJobs, receipt]);
 
   const amt = (v: string) => parseUnits(v || "0", USDC_DECIMALS);
   const busy = isPending || confirming;
@@ -158,28 +186,100 @@ export default function EscrowTest() {
     writeContract({ address: ESCROW_ADDRESS, abi: ESCROW_ABI, functionName: "slash", args: [BigInt(jobId), r] });
   };
 
-  // Agent pays per-use for a verified skill via x402 nanopayment (server-side, gas-free).
+  // The CONNECTED wallet pays per-use, gas-free: sign an EIP-3009 authorization
+  // in-browser and POST it to the x402 seller, which settles via Circle Gateway.
+  const signAndSettle = async (payTo: string, amountBase: number, jid: number, from: `0x${string}`) => {
+    const now = Math.floor(Date.now() / 1000);
+    const validAfter = now - 600;
+    const validBefore = now + X402_MAX_TIMEOUT;
+    const rnd = crypto.getRandomValues(new Uint8Array(32));
+    const nonce = ("0x" + Array.from(rnd).map((b) => b.toString(16).padStart(2, "0")).join("")) as `0x${string}`;
+    const signature = await signTypedDataAsync({
+      domain: { name: GATEWAY_BATCHED_NAME, version: GATEWAY_BATCHED_VERSION, chainId: arcTestnet.id, verifyingContract: GATEWAY_WALLET },
+      types: {
+        TransferWithAuthorization: [
+          { name: "from", type: "address" },
+          { name: "to", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "validAfter", type: "uint256" },
+          { name: "validBefore", type: "uint256" },
+          { name: "nonce", type: "bytes32" },
+        ],
+      },
+      primaryType: "TransferWithAuthorization",
+      message: { from, to: payTo as `0x${string}`, value: BigInt(amountBase), validAfter: BigInt(validAfter), validBefore: BigInt(validBefore), nonce },
+    });
+    const requirement = {
+      scheme: "exact", network: X402_NETWORK, asset: USDC_ADDRESS, amount: String(amountBase), payTo,
+      maxTimeoutSeconds: X402_MAX_TIMEOUT,
+      extra: { name: GATEWAY_BATCHED_NAME, version: GATEWAY_BATCHED_VERSION, verifyingContract: GATEWAY_WALLET },
+    };
+    const authorization = { from, to: payTo, value: String(amountBase), validAfter: String(validAfter), validBefore: String(validBefore), nonce };
+    const headerVal = btoa(
+      JSON.stringify({
+        x402Version: 2,
+        payload: { authorization, signature },
+        resource: { url: "https://mars.market/api/skill", description: "MARS verified skill", mimeType: "application/json" },
+        accepted: requirement,
+      }),
+    );
+    const res = await fetch(`/api/skill?payTo=${payTo}&amount=${amountBase}&jobId=${jid}`, { headers: { "Payment-Signature": headerVal } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "settlement failed");
+    return data as { verifiedLink?: string; settlementTx?: string };
+  };
+
   const buySkill = async () => {
+    if (!isConnected || !address) return setX402({ error: "connect a wallet to pay" });
+    if (!onArc) return setX402({ error: "switch to Arc Testnet first" });
     const jid = Number(payJobId || jobId);
-    if (!jid) {
-      setX402({ error: "enter a job # to pay its creator" });
-      return;
+    if (!jid) return setX402({ error: "pick a job (tap one in Jobs)" });
+    const j = jobs.find((x) => x.id === jid);
+    if (!j) return setX402({ error: `job #${jid} not loaded — Refresh` });
+    if (gwBal != null && Number(gwBal) < 0.01) {
+      return setX402({ error: "your Gateway balance is too low — Register / deposit first (step 0)" });
     }
-    setX402({ busy: true });
-    try {
-      const res = await fetch("/api/buy-skill", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId: jid }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setX402({ error: data.error || "payment failed" });
-        return;
+
+    const author = j.developer;
+    const auditor = j.auditor;
+    const total = 10000;
+    const authorAmt = Math.round((total * split) / 100);
+    const auditorAmt = total - authorAmt;
+    const recipients =
+      author.toLowerCase() === auditor.toLowerCase()
+        ? [{ role: "author+auditor", to: author, amount: total }]
+        : [
+            ...(authorAmt > 0 ? [{ role: "author", to: author, amount: authorAmt }] : []),
+            ...(auditorAmt > 0 ? [{ role: "auditor", to: auditor, amount: auditorAmt }] : []),
+          ];
+    for (const r of recipients) {
+      if (r.to.toLowerCase() === address.toLowerCase()) {
+        return setX402({ error: `${r.role} is your own wallet (self-transfer). Pay a skill you didn't author.` });
       }
-      setX402({ paid: data.paid, tx: data.tx, skill: data.skill, payTo: data.payTo, jobId: data.jobId });
+    }
+
+    setX402({ busy: true });
+    setBals({});
+    try {
+      const payments: { role: string; to: string; amount: string; tx: string }[] = [];
+      let verifiedLink: string | undefined;
+      for (const r of recipients) {
+        const data = await signAndSettle(r.to, r.amount, jid, address);
+        payments.push({ role: r.role, to: r.to, amount: formatUnits(BigInt(r.amount), 6), tx: data.settlementTx ?? "" });
+        verifiedLink = data.verifiedLink ?? verifiedLink;
+      }
+      setX402({
+        jobId: jid,
+        agent: address,
+        author,
+        auditor,
+        authorPct: split,
+        total: formatUnits(BigInt(total), 6),
+        payments,
+        verifiedLink,
+      });
     } catch (e) {
-      setX402({ error: String(e) });
+      setX402({ error: (e as Error).message || "payment failed" });
     }
   };
 
@@ -187,20 +287,55 @@ export default function EscrowTest() {
   const fetchGwBal = useCallback(async () => {
     if (!address) {
       setGwBal(null);
+      setGwPending(null);
       return;
     }
     try {
       const r = await fetch(`/api/gateway-balance?address=${address}`);
       const d = await r.json();
       setGwBal(d.available ?? "0");
+      setGwPending(d.pendingBatch ?? "0");
     } catch {
       setGwBal(null);
     }
   }, [address]);
 
+  // The agent wallet (ARC_PRIVATE_KEY): on-chain USDC + Gateway balance.
+  const fetchAgent = useCallback(async () => {
+    try {
+      const r = await fetch("/api/agent");
+      const d = await r.json();
+      if (d.address) setAgent(d);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
     fetchGwBal();
-  }, [fetchGwBal]);
+    fetchAgent();
+  }, [fetchGwBal, fetchAgent]);
+
+  // Read Gateway balances (available + pending) for payer + recipients — proof it landed.
+  const refreshBals = useCallback(async () => {
+    const addrs = [x402.agent, x402.author, x402.auditor].filter(Boolean) as string[];
+    const uniq = [...new Set(addrs.map((a) => a.toLowerCase()))];
+    await Promise.all(
+      uniq.map(async (a) => {
+        try {
+          const r = await fetch(`/api/gateway-balance?address=${a}`);
+          const d = await r.json();
+          setBals((prev) => ({ ...prev, [a]: { available: d.available, pending: d.pendingBatch } }));
+        } catch {
+          /* ignore */
+        }
+      }),
+    );
+  }, [x402.agent, x402.author, x402.auditor]);
+
+  useEffect(() => {
+    if (x402.agent) refreshBals();
+  }, [x402.agent, refreshBals]);
 
   // One-time: register this wallet with Circle Gateway (approve + deposit).
   const registerGateway = async () => {
@@ -245,10 +380,16 @@ export default function EscrowTest() {
     | { developer: string; auditor: string; fee: bigint; bond: bigint; feeFunded: boolean; bondPosted: boolean; status: number }
     | undefined;
 
+  const refreshAll = () => {
+    refetchAll();
+    loadJobs();
+    fetchGwBal();
+  };
+
   return (
     <div className="min-h-screen bg-black px-6 py-10 font-sans text-zinc-100">
-      <div className="mx-auto grid max-w-6xl grid-cols-1 items-start gap-5 lg:grid-cols-2">
-        <header className="flex flex-wrap items-start justify-between gap-3 lg:col-span-2">
+      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-5 lg:grid-cols-3">
+        <header className="flex flex-wrap items-start justify-between gap-3 lg:col-span-3">
           <div>
             <h1 className="text-2xl font-semibold">MARS Escrow — Arc Testnet</h1>
             <p className="mt-1 text-sm text-zinc-400">
@@ -261,7 +402,7 @@ export default function EscrowTest() {
         </header>
 
         {mounted && isConnected && !onArc && (
-          <div className="flex items-center justify-between rounded-xl border border-amber-700/50 bg-amber-900/20 p-4 text-sm text-amber-200 lg:col-span-2">
+          <div className="flex items-center justify-between rounded-xl border border-amber-700/50 bg-amber-900/20 p-4 text-sm text-amber-200 lg:col-span-3">
             <span>Wrong network — switch to Arc Testnet ({arcTestnet.id}).</span>
             <button onClick={() => switchChain({ chainId: arcTestnet.id })}
               className="rounded-md bg-amber-600 px-3 py-1.5 font-medium text-white hover:bg-amber-500">
@@ -270,32 +411,17 @@ export default function EscrowTest() {
           </div>
         )}
 
-        {!mounted || !isConnected ? (
-          <div className={`${card} text-sm text-zinc-400 lg:col-span-2`}>
-            Connect a wallet to begin. Need test USDC? Get it from{" "}
-            <a className="text-indigo-400 hover:underline" href="https://faucet.circle.com" target="_blank" rel="noreferrer">faucet.circle.com</a> (Arc Testnet).
-          </div>
-        ) : (
-          <>
-            {/* balances */}
-            <div className={`${card} lg:col-span-2`}>
-              <div className="mb-3 flex items-center justify-between">
-                <span className={label}>Balances</span>
-                <button onClick={refetchAll} className="rounded-md bg-zinc-700 px-3 py-1.5 text-sm text-white hover:bg-zinc-600">Refresh</button>
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                <Stat k="Your USDC">{fmt(usdcBal.data as bigint)}</Stat>
-                <Stat k="Escrow holds">{fmt(escrowBal.data as bigint)}</Stat>
-                <Stat k="Allowance">{fmt(allowance.data as bigint)}</Stat>
-                <Stat k="Active job">#{jobId || "—"}</Stat>
-                <Stat k="You"><a className="text-indigo-400 hover:underline" href={explorerAddress(address!)} target="_blank" rel="noreferrer">{short(address)}</a></Stat>
-                <Stat k="Escrow"><a className="text-indigo-400 hover:underline" href={explorerAddress(ESCROW_ADDRESS)} target="_blank" rel="noreferrer">{short(ESCROW_ADDRESS)}</a></Stat>
-                <Stat k="Next job id">{Number(nextJobId.data ?? 1n)}</Stat>
-              </div>
+        {/* LEFT — interactive flow */}
+        <main className="flex flex-col gap-5 lg:col-span-2">
+          {!mounted || !isConnected ? (
+            <div className={`${card} text-sm text-zinc-400`}>
+              Connect a wallet to begin. Need test USDC? Get it from{" "}
+              <a className="text-indigo-400 hover:underline" href="https://faucet.circle.com" target="_blank" rel="noreferrer">faucet.circle.com</a> (Arc Testnet).
             </div>
-
+          ) : (
+            <>
             {/* 0 register with gateway */}
-            <div className={`${card} lg:col-span-2`}>
+            <div className={card}>
               <p className="mb-1 text-sm font-medium text-zinc-300">0 · Register this wallet with Circle Gateway (one-time)</p>
               <p className="mb-3 text-xs text-zinc-500">
                 Deposits USDC into Gateway so this address can <strong>pay</strong> and <strong>receive</strong> x402
@@ -340,13 +466,27 @@ export default function EscrowTest() {
 
             {/* 2 create */}
             <div className={card}>
-              <p className="mb-3 text-sm font-medium text-zinc-300">2 · Create an audit job</p>
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="flex flex-col gap-1"><span className={label}>Fee</span><input className={input} value={fee} onChange={(e) => setFee(e.target.value)} /></div>
-                <div className="flex flex-col gap-1"><span className={label}>Bond</span><input className={input} value={bond} onChange={(e) => setBond(e.target.value)} /></div>
-                <Btn onClick={doCreate}>Create job</Btn>
-                <span className="text-xs text-zinc-500">developer = auditor = you (single-wallet test)</span>
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-medium text-zinc-300">2 · Create an audit job</p>
+                {showCreate && (
+                  <button onClick={() => setShowCreate(false)} className="text-xs text-zinc-500 hover:text-zinc-300">cancel</button>
+                )}
               </div>
+              {!showCreate ? (
+                <button
+                  onClick={() => setShowCreate(true)}
+                  className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
+                >
+                  Create
+                </button>
+              ) : (
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="flex flex-col gap-1"><span className={label}>Fee</span><input className={input} value={fee} onChange={(e) => setFee(e.target.value)} /></div>
+                  <div className="flex flex-col gap-1"><span className={label}>Bond</span><input className={input} value={bond} onChange={(e) => setBond(e.target.value)} /></div>
+                  <Btn onClick={doCreate}>Create job</Btn>
+                  <span className="text-xs text-zinc-500">developer = auditor = you (single-wallet test)</span>
+                </div>
+              )}
             </div>
 
             {/* 3 fund */}
@@ -425,31 +565,139 @@ export default function EscrowTest() {
               )}
             </div>
 
-            {/* function reference */}
-            <div className={`${card} lg:col-span-2`}>
-              <p className="mb-3 text-sm font-medium text-zinc-300">What each function does</p>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="text-xs uppercase tracking-wide text-zinc-500">
-                    <tr>
-                      <th className="py-1 pr-3">Button</th>
-                      <th className="py-1 pr-3">On-chain call</th>
-                      <th className="py-1 pr-3">What it does</th>
-                      <th className="py-1">Requires</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {FUNCS.map((f) => (
-                      <tr key={f.n} className="border-t border-zinc-800/70 align-top">
-                        <td className="py-1.5 pr-3 font-medium text-zinc-100">{f.n}</td>
-                        <td className="py-1.5 pr-3 font-mono text-xs text-indigo-300">{f.call}</td>
-                        <td className="py-1.5 pr-3 text-zinc-300">{f.does}</td>
-                        <td className="py-1.5 text-zinc-400">{f.needs}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            </>
+          )}
+
+          {/* 5 · agent pays per-use, fee split author/auditor (x402 nanopayment) */}
+          {mounted && (
+            <div className="rounded-xl border border-fuchsia-900/50 bg-fuchsia-950/20 p-4">
+            <p className="mb-1 text-sm font-medium text-zinc-200">5 · Use a verified skill — split the fee author / auditor (x402 nanopayment)</p>
+            <p className="mb-3 text-xs text-zinc-500">
+              <strong>You</strong> (your connected wallet) pay 0.01 USDC <strong>gas-free</strong> via Circle Gateway (x402), split between the
+              job&apos;s <strong>author</strong> and <strong>auditor</strong> by the slider — one gas-free signature per recipient. You must be
+              registered (step 0) and can&apos;t pay a skill you authored.
+            </p>
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="flex flex-col gap-1">
+                <span className="text-xs uppercase tracking-wide text-zinc-500">Pay for job #</span>
+                <input className={input} placeholder={jobId ? String(jobId) : "e.g. 3"} value={payJobId} onChange={(e) => setPayJobId(e.target.value)} />
               </div>
+              <div className="flex min-w-[16rem] flex-col gap-1">
+                <span className="text-xs uppercase tracking-wide text-zinc-500">
+                  Split — author <span className="text-fuchsia-300">{split}%</span> / auditor <span className="text-amber-300">{100 - split}%</span>
+                </span>
+                <input type="range" min={0} max={100} value={split} onChange={(e) => setSplit(Number(e.target.value))} className="accent-fuchsia-500" />
+              </div>
+              <button onClick={buySkill} disabled={x402.busy}
+                className="rounded-md bg-fuchsia-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-fuchsia-500 disabled:opacity-40">
+                {x402.busy ? "paying…" : "Pay 0.01 USDC (split, x402)"}
+              </button>
+            </div>
+            {x402.error && (
+              <p className="mt-3 rounded-md border border-rose-800/50 bg-rose-900/30 p-2 text-sm text-rose-300">{x402.error}</p>
+            )}
+            {x402.payments && (
+              <div className="mt-3 rounded-md border border-emerald-800/50 bg-emerald-900/20 p-3 text-sm">
+                <p className="text-emerald-300">
+                  ✓ Paid {x402.total} USDC for job #{x402.jobId} (gas-free) — split {x402.authorPct}% / {100 - (x402.authorPct ?? 0)}%
+                </p>
+                <ul className="mt-2 flex flex-col gap-1">
+                  {x402.payments.map((p, i) => (
+                    <li key={i} className="text-zinc-300">
+                      <span className="capitalize text-zinc-100">{p.role}</span> ← {p.amount} USDC → <span className="font-mono">{short(p.to)}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-3 border-t border-zinc-800 pt-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-xs uppercase tracking-wide text-zinc-500">Gateway balances (available · pending USDC)</span>
+                    <button onClick={refreshBals} className="text-xs text-indigo-400 hover:underline">refresh</button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <BalCard label="Payer (you)" addr={x402.agent} bals={bals} />
+                    <BalCard label="Author" addr={x402.author} bals={bals} />
+                    <BalCard label="Auditor" addr={x402.auditor} bals={bals} />
+                  </div>
+                </div>
+                {x402.verifiedLink && (
+                  <p className="mt-3 text-zinc-300">Verified link: <span className="font-mono text-xs text-fuchsia-300">{x402.verifiedLink}</span></p>
+                )}
+              </div>
+            )}
+            </div>
+          )}
+        </main>
+
+        {/* RIGHT — live sidebar */}
+        <aside className="lg:col-span-1">
+          <div className="flex flex-col gap-5 lg:sticky lg:top-6">
+            {/* live balances */}
+            <div className={card}>
+              <div className="mb-3 flex items-center justify-between">
+                <span className={label}>Live · balances</span>
+                <button onClick={refreshAll} className="rounded-md bg-zinc-700 px-3 py-1.5 text-xs text-white hover:bg-zinc-600">Refresh</button>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <Stat k="Your USDC">{fmt(usdcBal.data as bigint)}</Stat>
+                <Stat k="Gateway">{gwBal ?? "…"}</Stat>
+                <Stat k="Allowance">{fmt(allowance.data as bigint)}</Stat>
+                <Stat k="Escrow holds">{fmt(escrowBal.data as bigint)}</Stat>
+                <Stat k="Active job">#{jobId || "—"}</Stat>
+                <Stat k="Next id">{Number(nextJobId.data ?? 1n)}</Stat>
+              </div>
+              {isConnected && (
+                <p className="mt-3 text-xs text-zinc-500">
+                  You:{" "}
+                  <a className="text-indigo-400 hover:underline" href={explorerAddress(address!)} target="_blank" rel="noreferrer">{short(address)}</a>
+                </p>
+              )}
+            </div>
+
+            {/* wallets: on-chain USDC + Gateway balance */}
+            <div className={card}>
+              <div className="mb-3 flex items-center justify-between">
+                <span className={label}>Wallets · wallet · gateway</span>
+                <button onClick={() => { refetchAll(); fetchGwBal(); fetchAgent(); }} className="text-xs text-indigo-400 hover:underline">refresh</button>
+              </div>
+              <div className="flex flex-col gap-2 text-sm">
+                <div className="rounded-md border border-zinc-800 bg-zinc-950/40 p-2">
+                  <div className="text-xs uppercase tracking-wide text-zinc-500">Connected (you) {isConnected ? short(address) : "—"}</div>
+                  <div className="mt-0.5">
+                    <span className="text-zinc-100">{fmt(usdcBal.data as bigint)}</span> wallet · <span className="text-zinc-100">{gwBal ?? "…"}</span> gw
+                    {gwPending && Number(gwPending) > 0 ? <span className="text-amber-300"> (+{gwPending} pending)</span> : null}
+                  </div>
+                </div>
+                <div className="rounded-md border border-zinc-800 bg-zinc-950/40 p-2">
+                  <div className="text-xs uppercase tracking-wide text-zinc-500">Agent {agent?.address ? short(agent.address) : "—"}</div>
+                  <div className="mt-0.5">
+                    <span className="text-zinc-100">{agent?.walletUsdc ?? "…"}</span> wallet · <span className="text-zinc-100">{agent?.gatewayAvailable ?? "…"}</span> gw
+                    {agent?.gatewayPending && Number(agent.gatewayPending) > 0 ? <span className="text-amber-300"> (+{agent.gatewayPending} pending)</span> : null}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* jobs progress */}
+            <div className={card}>
+              <p className="mb-3 text-sm font-medium text-zinc-300">Jobs <span className="text-zinc-500">({jobs.length})</span></p>
+              <ul className="flex flex-col gap-2 text-sm">
+                {jobs.length === 0 && <li className="text-zinc-600">no jobs yet</li>}
+                {jobs.map((j) => (
+                  <li key={j.id}>
+                    <button
+                      onClick={() => setPayJobId(String(j.id))}
+                      className="flex w-full items-center justify-between rounded-md border border-zinc-800 bg-zinc-950/40 p-2 text-left transition hover:border-zinc-600"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="font-medium text-zinc-100">#{j.id}</span>
+                        <Badge label={STATUS_LABELS[j.status] ?? "Unknown"} />
+                      </span>
+                      <span className="text-xs text-zinc-500">fee {fmt(j.fee)} · bond {fmt(j.bond)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-zinc-600">tap a job to set it as the x402 pay target</p>
             </div>
 
             {/* activity */}
@@ -461,46 +709,13 @@ export default function EscrowTest() {
                   <li key={i} className="flex items-center gap-2">
                     <span className={l.ok ? "text-emerald-400" : "text-rose-400"}>{l.ok ? "✓" : "✕"}</span>
                     <span className="text-zinc-300">{l.action}</span>
-                    <span className="text-xs text-zinc-500">{l.ok ? "confirmed" : "reverted"}</span>
                     <a className="text-indigo-400 hover:underline" href={explorerTx(l.hash)} target="_blank" rel="noreferrer">tx ↗</a>
                   </li>
                 ))}
               </ul>
             </div>
-          </>
-        )}
-
-        {/* 5 · agent pays per-use for a verified skill (x402 nanopayment) */}
-        {mounted && (
-          <div className="rounded-xl border border-fuchsia-900/50 bg-fuchsia-950/20 p-4 lg:col-span-2">
-            <p className="mb-1 text-sm font-medium text-zinc-200">5 · Use a verified skill — pay-per-use (x402 nanopayment)</p>
-            <p className="mb-3 text-xs text-zinc-500">
-              Your AI <strong>agent</strong> pays 0.01 USDC <strong>gas-free</strong> via Circle Gateway (x402) to unlock the
-              verified skill. This uses the agent&apos;s own wallet (server-side), not your connected wallet.
-            </p>
-            <button
-              onClick={buySkill}
-              disabled={x402.busy}
-              className="rounded-md bg-fuchsia-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-fuchsia-500 disabled:opacity-40"
-            >
-              {x402.busy ? "paying…" : "Pay 0.01 USDC & unlock (x402)"}
-            </button>
-            {x402.error && (
-              <p className="mt-3 rounded-md border border-rose-800/50 bg-rose-900/30 p-2 text-sm text-rose-300">{x402.error}</p>
-            )}
-            {x402.skill && (
-              <div className="mt-3 rounded-md border border-emerald-800/50 bg-emerald-900/20 p-3 text-sm">
-                <p className="text-emerald-300">✓ Access granted — paid {x402.paid} USDC (gas-free)</p>
-                {x402.tx && (
-                  <a className="text-indigo-400 hover:underline" href={explorerTx(x402.tx)} target="_blank" rel="noreferrer">settlement tx ↗</a>
-                )}
-                <p className="mt-2 text-zinc-300">
-                  Verified link: <span className="font-mono text-xs text-fuchsia-300">{x402.skill.verifiedLink}</span>
-                </p>
-              </div>
-            )}
           </div>
-        )}
+        </aside>
       </div>
     </div>
   );
@@ -511,6 +726,27 @@ function Stat({ k, children }: { k: string; children: React.ReactNode }) {
     <div className="flex flex-col gap-0.5">
       <span className="text-xs uppercase tracking-wide text-zinc-500">{k}</span>
       <span className="font-medium text-zinc-100">{children}</span>
+    </div>
+  );
+}
+
+function BalCard({
+  label,
+  addr,
+  bals,
+}: {
+  label: string;
+  addr?: string;
+  bals: Record<string, { available?: string; pending?: string }>;
+}) {
+  const b = addr ? bals[addr.toLowerCase()] : undefined;
+  return (
+    <div className="rounded-md border border-zinc-800 bg-zinc-950/40 p-2">
+      <div className="text-xs uppercase tracking-wide text-zinc-500">{label}</div>
+      <div className="font-mono text-xs text-zinc-400">{addr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : "—"}</div>
+      <div className="mt-1 text-sm">
+        <span className="text-zinc-100">{b?.available ?? "…"}</span> · <span className="text-amber-300">{b?.pending ?? "…"}</span>
+      </div>
     </div>
   );
 }
