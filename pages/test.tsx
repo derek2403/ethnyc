@@ -514,7 +514,7 @@ export default function EscrowTest() {
                   <div className="flex flex-col gap-1"><span className={label}>Fee</span><input className={input} value={fee} onChange={(e) => setFee(e.target.value)} /></div>
                   <div className="flex flex-col gap-1"><span className={label}>Bond</span><input className={input} value={bond} onChange={(e) => setBond(e.target.value)} /></div>
                   <Btn onClick={doCreate}>Create job</Btn>
-                  <span className="text-xs text-zinc-500">developer = auditor = you (single-wallet test)</span>
+                  <span className="text-xs text-zinc-500">developer = you · auditor = agent {agent?.address ? short(agent.address) : "…"}</span>
                 </div>
               )}
             </div>

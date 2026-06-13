@@ -11,7 +11,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Recipient = the job's creator (passed by the buyer), falls back to the default seller.
   const payToQ = String(req.query.payTo ?? "");
   const payTo = /^0x[0-9a-fA-F]{40}$/.test(payToQ) ? payToQ : SKILL_SELLER;
-  const requirement = skillRequirement(payTo);
+  const amountQ = String(req.query.amount ?? "");
+  const amount = /^\d+$/.test(amountQ) && Number(amountQ) > 0 ? amountQ : undefined;
+  const requirement = skillRequirement(payTo, amount);
   const sig = req.headers["payment-signature"] as string | undefined;
 
   // 1) Unpaid request -> 402 Payment Required with the x402 PAYMENT-REQUIRED header.
