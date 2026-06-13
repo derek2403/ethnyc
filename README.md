@@ -1,11 +1,11 @@
-# Warden — The Audit Marketplace for AI-Agent Skills
+# MARS — Marketplace for Audited, Reputable Skills
 ### *Buy a skill you can trust with your wallet.*
 
 > AI agents now hold wallets and install **skills / MCP tools** to act — but those skills are unvetted, and a poisoned one can drain the agent. **Warden is a marketplace where a swarm of staked, World-ID-verified auditors *competes* to audit each skill, the winner's verdict is attested on-chain, and agents pay-per-version to use only the skills that passed.**
 
 **ETHGlobal New York 2026** · Tracks: **Arc** · **Hedera** · **World** · **Chainlink**
 
-*(Working name — rename freely.)*
+*(**MARS** = **M**arketplace for **A**udited, **R**eputable **S**kills.)*
 
 ---
 
