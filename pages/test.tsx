@@ -523,14 +523,21 @@ export default function EscrowTest() {
             <div className={card}>
               <p className="mb-3 text-sm font-medium text-zinc-300">3 · Lock funds in escrow</p>
               <div className="flex flex-wrap items-center gap-3">
-                <Btn onClick={doFund} disabled={!jobId}>Fund fee</Btn>
-                <Btn onClick={doBond} disabled={!jobId}>Post bond</Btn>
-                <span className="text-xs text-zinc-500">moves USDC into the escrow contract</span>
+                <Btn onClick={doFund} disabled={!jobId}>Fund fee (you)</Btn>
+                <button
+                  onClick={doBond}
+                  disabled={!jobId || bondBusy}
+                  className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-40"
+                >
+                  {bondBusy ? "agent posting…" : "Post bond (agent)"}
+                </button>
+                <span className="text-xs text-zinc-500">you fund the fee · the agent (auditor) posts the bond</span>
               </div>
               {allowanceNum <= 0 && (
-                <p className="mt-2 text-xs text-amber-400">
-                  Allowance is 0 — each approval is consumed when you fund. Re-approve (≥ your bond) before posting bond.
-                </p>
+                <p className="mt-2 text-xs text-amber-400">Your allowance is 0 — re-approve (step 1) before funding the fee.</p>
+              )}
+              {flowMsg && (
+                <p className="mt-2 rounded-md border border-rose-800/50 bg-rose-900/30 p-2 text-xs text-rose-300">{flowMsg}</p>
               )}
             </div>
 
