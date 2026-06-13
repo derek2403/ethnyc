@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import Popout, { ExpandButton } from "./Popout";
+import LiveAuditsExpanded from "./LiveAuditsExpanded";
 
 // ── Cell B · Live Audits ─────────────────────────────────────────────────
 // Standalone: simulates a handful of in-flight audits advancing through
@@ -54,6 +56,7 @@ const seedAudit = (i: number): Audit => {
 
 export default function LiveAudits() {
   const [audits, setAudits] = useState<Audit[]>(() => [0, 1, 2, 3].map(seedAudit));
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -69,6 +72,7 @@ export default function LiveAudits() {
   }, []);
 
   return (
+    <>
     <div
       style={{
         gridColumn: "7 / 11",
@@ -84,10 +88,15 @@ export default function LiveAudits() {
     >
       <div style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderBottom: "1px solid var(--hair-soft)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--warn)", animation: "onlinePulse 2s ease-in-out infinite" }} />
+          <svg width="14" height="14" viewBox="0 0 24 24" style={{ fill: "none", stroke: "var(--ink-2)", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round" }}>
+            <polyline points="2 12 6 12 9 4 14 20 17 12 22 12" />
+          </svg>
           <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink)" }}>Live Audits</span>
         </div>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--ink-3)" }}>{audits.length} in flight</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 10, color: "var(--ink-3)" }}>{audits.length} in flight</span>
+          <ExpandButton onClick={() => setOpen(true)} />
+        </div>
       </div>
       <div style={{ flex: 1, minHeight: 0, overflow: "hidden", padding: "6px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
         {audits.map((a) => {
@@ -130,5 +139,11 @@ export default function LiveAudits() {
         })}
       </div>
     </div>
+      {open && (
+        <Popout title="Live Audits" meta="click an audit for its trail & pipeline steps" onClose={() => setOpen(false)}>
+          <LiveAuditsExpanded />
+        </Popout>
+      )}
+    </>
   );
 }
