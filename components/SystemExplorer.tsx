@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import Popout, { ExpandButton } from "./Popout";
+import ExplorerExpanded from "./ExplorerExpanded";
 
 // ── Cell A · System Explorer ─────────────────────────────────────────────
 // Standalone: holds its own view / selection / Mars-panel state and runs its
@@ -187,45 +189,6 @@ function seedTrail(): TrailRow[] {
   return seed;
 }
 
-// A line-drawn "globe": outline circle + latitude ellipses + a couple of
-// craters. Lines are neutral; no label.
-function WireBody({
-  cx,
-  cy,
-  r,
-  outline,
-  hitClass,
-  anim,
-  onClick,
-}: {
-  cx: number;
-  cy: number;
-  r: number;
-  outline: string;
-  hitClass: string;
-  anim: string;
-  onClick: () => void;
-}) {
-  return (
-    <g style={{ cursor: "pointer", animation: anim }} onClick={onClick}>
-      <circle className={hitClass} cx={cx} cy={cy} r={r + 14} fill="transparent" strokeDasharray="3 5" />
-      {/* latitude lines */}
-      <g style={{ fill: "none", stroke: "var(--moon)", strokeWidth: 1, opacity: 0.55 }}>
-        <ellipse cx={cx} cy={cy} rx={r * 0.99} ry={r * 0.18} />
-        <ellipse cx={cx} cy={cy - r * 0.46} rx={r * 0.74} ry={r * 0.13} />
-        <ellipse cx={cx} cy={cy + r * 0.46} rx={r * 0.74} ry={r * 0.13} />
-      </g>
-      {/* craters */}
-      <g style={{ fill: "none", stroke: "var(--moon)", strokeWidth: 1, opacity: 0.4 }}>
-        <ellipse cx={cx - r * 0.3} cy={cy - r * 0.12} rx={r * 0.15} ry={r * 0.1} />
-        <ellipse cx={cx + r * 0.27} cy={cy + r * 0.24} rx={r * 0.11} ry={r * 0.075} />
-      </g>
-      {/* outline */}
-      <circle cx={cx} cy={cy} r={r} fill="none" strokeWidth="1.5" style={{ stroke: outline, opacity: 0.9 }} />
-    </g>
-  );
-}
-
 export default function SystemExplorer() {
   const auditors = useMemo(buildAuditors, []);
   const users = useMemo(buildUsers, []);
@@ -237,6 +200,7 @@ export default function SystemExplorer() {
   const [trail, setTrail] = useState<TrailRow[]>(seedTrail);
   const [seq, setSeq] = useState<string>((88412).toLocaleString());
   const [kpi, setKpi] = useState({ audits: 7, verified: 1284, escrow: 48250, flagged: 23 });
+  const [open, setOpen] = useState(false);
 
   const poolIx = useRef(0);
   const seqNum = useRef(88412);
@@ -386,70 +350,47 @@ export default function SystemExplorer() {
   ];
 
   return (
+    <>
     <div
       style={{
         gridColumn: "1 / 7",
         gridRow: "1 / 3",
-        position: "relative",
         overflow: "hidden",
         background: "var(--cell)",
         border: "1px solid var(--hair)",
         borderRadius: 10,
+        display: "flex",
+        flexDirection: "column",
       }}
     >
-      {/* cell header */}
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          zIndex: 6,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "12px 14px",
-          background: "linear-gradient(180deg, var(--scrim), transparent)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+      {/* cell header — matches the other four cells */}
+      <div style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderBottom: "1px solid var(--hair-soft)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <svg width="15" height="15" viewBox="0 0 22 22" style={{ fill: "none", stroke: "var(--ink-2)", strokeWidth: 1.4 }}>
+            <circle cx="11" cy="11" r="8.2" />
+            <ellipse cx="11" cy="11" rx="8.2" ry="3.1" />
+            <ellipse cx="11" cy="11" rx="3.1" ry="8.2" />
+          </svg>
+          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink)" }}>Network Explorer</span>
           {isMoon && (
             <button
               onClick={goSystem}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                background: "var(--panel)",
-                border: "1px solid var(--hair)",
-                color: "var(--ink-2)",
-                fontFamily: "var(--mono)",
-                fontSize: 10,
-                letterSpacing: ".06em",
-                padding: "5px 9px",
-                cursor: "pointer",
-                borderRadius: 8,
-              }}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "1px solid var(--hair)", color: "var(--ink-2)", fontSize: 10, letterSpacing: ".04em", padding: "3px 8px", cursor: "pointer", borderRadius: 6, marginLeft: 4 }}
             >
               ← system
             </button>
           )}
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: ".12em",
-              color: isSystem ? "var(--ink-3)" : isA ? "var(--comm)" : "var(--warn)",
-              textTransform: "uppercase",
-            }}
-          >
-            {isSystem ? "NETWORK EXPLORER" : isA ? "PHOBOS · AUDITORS" : "DEIMOS · USERS"}
-          </span>
         </div>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--ink-3)", letterSpacing: ".04em" }}>
-          {isSystem ? "click a body to explore" : "click a star"}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 9.5, color: "var(--ink-3)", letterSpacing: ".04em" }}>
+            {isSystem ? "click a body to explore" : "click a star"}
+          </span>
+          <ExpandButton onClick={() => setOpen(true)} />
+        </div>
       </div>
+
+      {/* body */}
+      <div style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden" }}>
 
       {/* ── SYSTEM VIEW ── */}
       {isSystem && (
@@ -459,8 +400,8 @@ export default function SystemExplorer() {
               <circle cx="260" cy="205" r="112" />
             </clipPath>
             <radialGradient id="marsGlow" cx="50%" cy="50%" r="50%">
-              <stop offset="62%" stopColor="rgba(210,115,74,0)" />
-              <stop offset="100%" stopColor="rgba(210,115,74,0.12)" />
+              <stop offset="84%" stopColor="rgba(194,84,42,0)" />
+              <stop offset="100%" stopColor="rgba(194,84,42,0.14)" />
             </radialGradient>
             <pattern id="rockTex" width="46" height="46" patternUnits="userSpaceOnUse">
               <animateTransform attributeName="patternTransform" type="translate" from="0 0" to="46 0" dur="16s" repeatCount="indefinite" />
@@ -497,64 +438,46 @@ export default function SystemExplorer() {
             <ellipse cx="260" cy="205" rx="345" ry="180" />
           </g>
 
-          {/* connections */}
+          {/* connections — drawn center-to-center; the planets render on top
+              and cover the inner ends, so the lines read as connected */}
           <g style={{ fill: "none", strokeWidth: 1.1 }}>
-            <path d="M368,175 L545,125" style={{ stroke: "var(--comm)", strokeDasharray: "2 6", opacity: 0.5 }} />
+            <path d="M260,205 L580,115" style={{ stroke: "var(--comm)", strokeDasharray: "2 6", opacity: 0.5 }} />
             <circle r="2.4" style={{ fill: "var(--comm)" }}>
-              <animateMotion dur="3s" repeatCount="indefinite" path="M368,175 L545,125" />
+              <animateMotion dur="3s" repeatCount="indefinite" path="M260,205 L580,115" />
             </circle>
             <circle r="1.8" style={{ fill: "var(--comm)", opacity: 0.6 }}>
-              <animateMotion dur="3s" begin="1.5s" repeatCount="indefinite" path="M545,125 L368,175" />
+              <animateMotion dur="3s" begin="1.5s" repeatCount="indefinite" path="M580,115 L260,205" />
             </circle>
-            <path d="M368,233 L638,303" style={{ stroke: "var(--warn)", strokeDasharray: "2 6", opacity: 0.5 }} />
+            <path d="M260,205 L665,310" style={{ stroke: "var(--warn)", strokeDasharray: "2 6", opacity: 0.5 }} />
             <circle r="2.4" style={{ fill: "var(--warn)" }}>
-              <animateMotion dur="3.4s" repeatCount="indefinite" path="M368,233 L638,303" />
+              <animateMotion dur="3.4s" repeatCount="indefinite" path="M260,205 L665,310" />
             </circle>
             <circle r="1.8" style={{ fill: "var(--warn)", opacity: 0.6 }}>
-              <animateMotion dur="3.4s" begin="1.7s" repeatCount="indefinite" path="M638,303 L368,233" />
+              <animateMotion dur="3.4s" begin="1.7s" repeatCount="indefinite" path="M665,310 L260,205" />
             </circle>
-            <path d="M594,148 L654,284" style={{ stroke: "var(--safe)", strokeDasharray: "2 6", opacity: 0.4 }} />
+            <path d="M580,115 L665,310" style={{ stroke: "var(--safe)", strokeDasharray: "2 6", opacity: 0.4 }} />
             <circle r="2.2" style={{ fill: "var(--safe)" }}>
-              <animateMotion dur="4s" repeatCount="indefinite" path="M594,148 L654,284" />
+              <animateMotion dur="4s" repeatCount="indefinite" path="M580,115 L665,310" />
             </circle>
           </g>
 
-          {/* MARS wireframe core (clickable) */}
+          {/* MARS planet (clickable) — swap /public/mars.svg to change it */}
           <g style={{ cursor: "pointer" }} onClick={openMars}>
-            <circle cx="260" cy="205" r="138" fill="url(#marsGlow)" />
-            <g clipPath="url(#marsClip)">
-              <g style={{ fill: "none", stroke: "var(--mars-soft)", strokeWidth: 1 }}>
-                <ellipse cx="260" cy="205" rx="112" ry="16" />
-                <ellipse cx="260" cy="153" rx="96" ry="12" />
-                <ellipse cx="260" cy="257" rx="96" ry="12" />
-                <ellipse cx="260" cy="117" rx="60" ry="8" />
-                <ellipse cx="260" cy="293" rx="60" ry="8" />
-              </g>
-              <g style={{ fill: "none", stroke: "var(--mars-soft)", strokeWidth: 1, strokeDasharray: "1.5 5" }}>
-                <animateTransform attributeName="transform" type="translate" from="0 0" to="26 0" dur="9s" repeatCount="indefinite" />
-                <line x1="168" y1="100" x2="168" y2="310" />
-                <line x1="194" y1="100" x2="194" y2="310" />
-                <line x1="220" y1="100" x2="220" y2="310" />
-                <line x1="246" y1="100" x2="246" y2="310" />
-                <line x1="272" y1="100" x2="272" y2="310" />
-                <line x1="298" y1="100" x2="298" y2="310" />
-                <line x1="324" y1="100" x2="324" y2="310" />
-                <line x1="350" y1="100" x2="350" y2="310" />
-              </g>
-              <g style={{ fill: "none", stroke: "var(--mars)", strokeWidth: 1, opacity: 0.5 }}>
-                <ellipse cx="225" cy="180" rx="18" ry="9" />
-                <ellipse cx="295" cy="235" rx="24" ry="12" />
-                <ellipse cx="275" cy="158" rx="12" ry="6" />
-              </g>
-            </g>
-            <circle cx="260" cy="205" r="112" style={{ fill: "none", stroke: "var(--mars)", strokeWidth: 1.5 }} />
+            <circle cx="260" cy="205" r="124" fill="url(#marsGlow)" />
+            <image href="/mars.svg" x="148" y="93" width="224" height="224" preserveAspectRatio="xMidYMid meet" />
           </g>
 
-          {/* PHOBOS · wireframe globe (auditors / blue) */}
-          <WireBody cx={580} cy={115} r={36} outline="var(--comm)" hitClass="body-hit-comm" anim="float1 9s ease-in-out infinite" onClick={goPhobos} />
+          {/* PHOBOS · planet image (auditors) */}
+          <g style={{ cursor: "pointer", animation: "float1 9s ease-in-out infinite" }} onClick={goPhobos}>
+            <circle cx="580" cy="115" r="50" fill="transparent" />
+            <image href="/phobos.svg" x="544" y="79" width="72" height="72" preserveAspectRatio="xMidYMid meet" />
+          </g>
 
-          {/* DEIMOS · wireframe globe (users / light orange) */}
-          <WireBody cx={665} cy={310} r={28} outline="#e8a15c" hitClass="body-hit-warn" anim="float2 11s ease-in-out infinite" onClick={goDeimos} />
+          {/* DEIMOS · planet image (users) */}
+          <g style={{ cursor: "pointer", animation: "float2 11s ease-in-out infinite" }} onClick={goDeimos}>
+            <circle cx="665" cy="310" r="42" fill="transparent" />
+            <image href="/deimos.svg" x="637" y="282" width="56" height="56" preserveAspectRatio="xMidYMid meet" />
+          </g>
         </svg>
       )}
 
@@ -606,7 +529,7 @@ export default function SystemExplorer() {
             {/* 3D moon */}
             <g style={{ animation: "float1 13s ease-in-out infinite" }}>
               <circle cx="290" cy="205" r="132" fill={`url(#${moonAtmoBig})`} />
-              <circle cx="290" cy="205" r="112" fill="none" strokeWidth="1.4" style={{ stroke: moonAccent, opacity: 0.6 }} />
+              <image href={isA ? "/phobos.svg" : "/deimos.svg"} x="178" y="93" width="224" height="224" preserveAspectRatio="xMidYMid meet" />
             </g>
 
             {/* stars */}
@@ -633,13 +556,8 @@ export default function SystemExplorer() {
           </svg>
 
           {/* moon intro */}
-          <div style={{ position: "absolute", left: 14, top: 46, maxWidth: 230, zIndex: 4 }}>
-            <div style={{ fontSize: 17, fontWeight: 500, letterSpacing: "-.01em" }}>{isA ? "Auditor swarm" : "User base"}</div>
-            <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--ink-3)", marginTop: 5, lineHeight: 1.5 }}>
-              {isA
-                ? "World-ID-verified auditors staked on MARS. They compete on quotes and post attested verdicts."
-                : "Agents licensing verified skills. They pay per version and rate what they consume."}
-            </div>
+          <div style={{ position: "absolute", left: 14, top: 14, maxWidth: 230, zIndex: 4 }}>
+            <div style={{ fontSize: 17, fontWeight: 500, letterSpacing: "-.01em" }}>{isA ? "Auditors" : "Users"}</div>
           </div>
         </>
       )}
@@ -651,7 +569,7 @@ export default function SystemExplorer() {
           style={{
             position: "absolute",
             right: 12,
-            top: 46,
+            top: 12,
             bottom: 12,
             width: 286,
             background: "var(--panel)",
@@ -745,7 +663,7 @@ export default function SystemExplorer() {
           style={{
             position: "absolute",
             right: 12,
-            top: 46,
+            top: 12,
             bottom: 12,
             width: 316,
             background: "var(--panel)",
@@ -816,6 +734,13 @@ export default function SystemExplorer() {
           </div>
         </div>
       )}
+      </div>
     </div>
+      {open && (
+        <Popout title="Network Explorer" meta="hover to pause · click a dot or a moon" onClose={() => setOpen(false)}>
+          <ExplorerExpanded />
+        </Popout>
+      )}
+    </>
   );
 }
