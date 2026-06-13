@@ -1,10 +1,16 @@
+import { useState } from "react";
+import Popout, { ExpandButton } from "./Popout";
+import SearchExpanded from "./SearchExpanded";
+
 // ── Cell F · Cross-chain Search ──────────────────────────────────────────
 // Standalone: a Blockscout-style search box. Chips are equal search hints
 // that focus the input; the input rewrites the "go" link's href on submit.
+// Expand → a MARS block explorer that resolves any platform id.
 
 const CHIP_LABELS = ["Address", "Domain", "Smart contract", "Transaction", "Token", "DApp", "NFT", "Block"];
 
 export default function CrossChainSearch() {
+  const [open, setOpen] = useState(false);
   const onSearchInput: React.FormEventHandler<HTMLInputElement> = (e) => {
     const v = (e.currentTarget.value || "").trim();
     const a = document.getElementById("bs-go") as HTMLAnchorElement | null;
@@ -18,6 +24,7 @@ export default function CrossChainSearch() {
   };
 
   return (
+    <>
     <div
       style={{
         gridColumn: "6 / 11",
@@ -38,28 +45,20 @@ export default function CrossChainSearch() {
             <circle cx="11" cy="11" r="7" />
             <line x1="16.5" y1="16.5" x2="21" y2="21" />
           </svg>
-          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink)" }}>Cross-chain Search</span>
+          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink)" }}>Explorer</span>
         </div>
-        <span style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--ink-3)" }}>Multichain explorer</span>
+        <ExpandButton onClick={() => setOpen(true)} />
       </div>
 
       {/* body */}
       <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 22 }}>
         <div style={{ width: "100%", maxWidth: 620, display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <div style={{ fontSize: 20, fontWeight: 600, color: "var(--mars)", letterSpacing: "-.01em" }}>Simplified cross-chain search</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14 }}>
-            <span style={{ fontSize: 12, fontWeight: 500, background: "var(--mars)", color: "#fff", padding: "6px 14px", borderRadius: 8 }}>Search on chain</span>
-            <a href="https://www.blockscout.com/" target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "var(--ink-2)", padding: "6px 12px", textDecoration: "none" }}>
-              Explore dapps
-            </a>
-            <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--mars)", border: "1px solid var(--mars-soft)", padding: "5px 12px", borderRadius: 8 }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" style={{ fill: "var(--mars)" }}>
-                <path d="M12 2 l1.8 6.2 L20 10 l-6.2 1.8 L12 18 l-1.8 -6.2 L4 10 l6.2 -1.8 Z" />
-              </svg>
-              AI mode
-            </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 20, fontWeight: 600, color: "var(--ink)", letterSpacing: "-.01em" }}>
+            Search anything on
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.svg" alt="Mars" style={{ height: 40, width: "auto", display: "block", marginTop: "-12px", marginLeft: "-12px" }} />
           </div>
-          <div style={{ marginTop: 16, width: "100%", display: "flex", alignItems: "center", gap: 10, background: "var(--inset)", border: "1px solid var(--hair)", borderRadius: 8, padding: "6px 6px 6px 14px" }}>
+          <div style={{ marginTop: 18, width: "100%", display: "flex", alignItems: "center", gap: 10, background: "var(--inset)", border: "1px solid var(--hair)", borderRadius: 8, padding: "6px 6px 6px 14px" }}>
             <svg width="17" height="17" viewBox="0 0 24 24" style={{ fill: "none", stroke: "var(--ink-3)", strokeWidth: 2, flex: "none" }}>
               <circle cx="11" cy="11" r="7" />
               <line x1="16.5" y1="16.5" x2="21" y2="21" strokeLinecap="round" />
@@ -108,5 +107,11 @@ export default function CrossChainSearch() {
         </div>
       </div>
     </div>
+      {open && (
+        <Popout title="Explorer" meta="MARS block explorer · resolve any id" onClose={() => setOpen(false)}>
+          <SearchExpanded />
+        </Popout>
+      )}
+    </>
   );
 }
