@@ -20,30 +20,34 @@ AI agents (OpenClaw, ElizaOS, Claude, any MCP-compatible agent) gain abilities b
 
 **The concrete harm:** one poisoned skill = a **drained wallet, stolen API keys, and leaked secrets** — and the agent does it *to itself*, trusting a tool it never vetted. **There is no App Store, no review, no trust layer for the skills agents depend on.** MARS is that layer — it stops the skill **before** it can drain the wallet or steal the keys.
 
+> **💢 We faced this firsthand.** Mid-build, one of our own teammates had their **AI / LLM credits drained** while we were working — a live reminder that this harm isn't a hypothetical on a threat slide. The agents we hand keys and budgets to *can* burn them, and that's exactly what MARS exists to stop. *(Logged here so we never forget why we're building it.)*
+
 ---
 
 ## 2. The Actors
 
 | Actor | Role |
 |---|---|
-| **Developer** (skill creator) | Posts their skill + a **request for quotation** — the **scope** (what to check) and required **compliance level**; reviews the auditors' **quotes**, accepts one, and pays that fee into escrow; earns when users license their verified skill. |
-| **Auditor** (a swarm that *quotes*) | A swarm of **independent, World-ID-verified** auditors that **submit quotes** (price + approach) for each open request. The one the requesting agent **selects** posts a **bond** and runs the audit (internally a scanner → sandbox → fork → synthesizer pipeline); it's paid the fee and **slashed** if its verdict is later proven wrong. |
-| **User** (consumer agent) | Discovers **verified** skills, pays to use them (Arc x402 → HTS license), and can leave **World-ID-gated, proof-of-use reviews**. |
+| **Developer's agent** (acts for the skill creator) | The creator's **agent** posts the skill + a **request for quotation** — the **scope** (what to check) and required **compliance level** — **negotiates in the HCS Flora room**, reviews the auditors' **quotes**, accepts one, and pays that fee into escrow. The human creator stays at the edge — they **own the skill and earn the royalty** when users license the verified build. |
+| **Auditor agent** (a swarm that *quotes*) | A swarm of **independent, World-ID-verified** auditor **agents** that **submit quotes** (price + approach) and **negotiate in the Flora room**. The one the requesting agent **selects** posts a **bond** and runs the audit (internally a scanner → sandbox → fork → synthesizer pipeline); it's paid the fee, **earns a rating + on-chain reputation** for a clean job (→ **wins more future jobs**), and is **slashed** (bond + reputation) if its verdict is later proven wrong. |
+| **User agent** (consumer) | Discovers **verified** skills, pays to use them (Arc x402 → HTS license), and leaves **World-ID-gated, proof-of-use reviews** — rating **both the skill and the auditor**, so good auditors get chosen more next time. |
 
 ---
 
 ## 3. How It Works (the flow)
 
 ```
-1. REQUEST (RFQ)   Developer posts a skill + a REQUEST FOR QUOTATION — the SCOPE (what to check),
-                   TIME, and required PROFESSIONALISM / COMPLIANCE level (e.g. SOC 2 / enterprise).
+1. REQUEST (RFQ)   The DEVELOPER'S AGENT posts a skill + a REQUEST FOR QUOTATION — the SCOPE (what
+                   to check), TIME, and required PROFESSIONALISM / COMPLIANCE level (e.g. SOC 2).
 
 2. QUOTE           World-ID-verified auditors respond with QUOTES — their RATE + approach.
                    ⤷ Flora room (HCS-16): the requesting agent + auditors (inside or outside the
                      job) JOIN & TALK here — clarify scope, negotiate the quote — see §12.
 
-3. SELECT+ESCROW   The requesting (USER) AI agent reviews the quotes and SELECTS one. The chosen
-                   auditor ties a BOND; the x402 escrow opens on Arc holding the dev's fee + bond.
+3. SELECT+ESCROW   The requesting AGENT and the auditor AGENTS NEGOTIATE in the HCS Flora room
+                   (HCS-16) — clarify scope, haggle the quote — then the requesting agent SELECTS
+                   one, weighing PRICE × the auditor's REPUTATION / RATING × approach × BOND. The
+                   chosen auditor ties a BOND; x402 escrow opens on Arc (holds the dev's fee + bond).
 
 4. AUDIT (TEE)     The SELECTED auditor runs the skill in a sandbox INSIDE a TEE — observing
                    DECLARED vs ACTUAL behavior (network / files / wallet) + scanning descriptions
@@ -80,7 +84,9 @@ Two pots of money, both on **Arc via x402 (USDC)**:
 | **Audit fee** (escrow) | the **Developer** (price = the **accepted quote**) | pays the **selected** auditor for the vetting |
 | **Bond** (escrow) | the **selected Auditor** | honesty collateral → **slashed** if the verdict is wrong |
 
-**Audit tiers — the developer requests a tier; auditors quote against it:**
+> **Two payment rails (both x402 USDC on Arc):** the **first** payment — *paying to get a skill audited* — runs through **ESCROW** (conditional; released on a clean verdict, the auditor's bond slashed on a bad one). Every payment **after** verification — *paying to use the skill* — is a **direct NANOPAYMENT** (instant, no escrow) that **mints an HTS license**. Escrow guards the vetting; nanopayments make consuming a verified skill fast.
+
+**Audit tiers — the developer's agent requests a tier; auditor agents quote against it:**
 - **🟢 Automated audit (standard)** — the selected auditor's automated agent pipeline: fast, cheap, sandbox + behavioral checks. Good for most skills.
 - **🏛️ Professional / Enterprise audit (premium)** — a **certified human auditor** (e.g. a **SOC 2-compliant** security firm) performs a deeper, attested review for a **higher fee** → an **enterprise-grade trust badge** for skills used in regulated or high-value flows. Pricier, slower, higher assurance.
 
@@ -100,7 +106,7 @@ Two pots of money, both on **Arc via x402 (USDC)**:
 ## 5. Sponsor Integrations (and which track)
 
 ### 🟦 Arc / Circle — payments + royalties · *Best Agentic Economy ($3,500) + Advanced Stablecoin Logic ($3,500)*
-All money moves as **x402 USDC on Arc** — **nanopayments** for micro-amounts, or **simple omnichain x402** (fund from any chain via Circle Gateway → Arc as the liquidity hub):
+All money moves as **x402 USDC on Arc** — **nanopayments** for micro-amounts, funded by **omnichain x402** (top up from **any chain** via Circle Gateway → Arc as the liquidity hub). Any-chain funding and nanopayments **compose** — fund from wherever your USDC lives, still pay tiny per-use fees on Arc:
 - **Audit-fee escrow**, **auditor bonds**, and **per-version license payments** all settle here in USDC.
 - **Author royalty = Advanced Stablecoin Logic:** when the payer is the **author** (self-publishing + first to verify their own skill), they're registered as creator and earn a **programmable royalty split** on every future license. A **non-author** requesting an audit pays a **plain x402 payment, no royalty**.
 - *Why it fits:* "agents make gas-free micropayments / agent marketplaces" (**Agentic Economy**) + "programmable royalty / conditional split / multi-step settlement" (**Advanced Stablecoin Logic**) + "chain-abstracted USDC" via Gateway (**Chain-Abstracted USDC** — a 3rd Arc shot).
@@ -162,11 +168,11 @@ MAIN REGISTRY TOPIC   (HCS-2 / HCS-26: Decentralized Agent Skills Registry)
 ## 6. Architecture
 
 ```
-  Developer ─ posts skill + RFQ (scope / compliance) ─▶ MARKETPLACE (Next.js)
+  Developer's AGENT ─ posts skill + RFQ (scope / compliance) ─▶ MARKETPLACE (Next.js)
                                                      │
                                                      ▼
-  AUDITORS SUBMIT QUOTES ─▶ USER AGENT SELECTS ONE ─▶ ties BOND + opens x402 escrow (Arc)
-       ↕ Flora room (HCS-16): agents join & talk / negotiate the quote
+  AUDITOR AGENTS QUOTE ─▶ REQUESTING AGENT SELECTS (price × reputation × approach × bond) ─▶ BOND + x402 escrow (Arc)
+       ↕ Flora room (HCS-16): requesting agent + auditor agents JOIN & NEGOTIATE the quote
                                                      ▼
   SELECTED AUDITOR — internal multi-agent pipeline (World-ID-verified):
     • Agent A — scans tool descriptions for injection
@@ -181,7 +187,7 @@ MAIN REGISTRY TOPIC   (HCS-2 / HCS-26: Decentralized Agent Skills Registry)
   HEDERA  ── HCS: verdict + audit trail (registry)  ── HTS: VERIFIED token + version license
                                                      │
                                                      ▼
-  User/agent ─ sees ✅ VERIFIED ─ pays Arc x402 ─▶ mints HTS license ─▶ runs skill via VERIFIED LINK
+  User AGENT ─ sees ✅ VERIFIED ─ pays Arc x402 (direct nanopayment) ─▶ mints HTS license ─▶ runs via VERIFIED LINK
                                   (dev + auditor earn)        │
                                                      ┌─────────┘
   WORLD ID gates every agent (auditors + reviewers)  ▼
@@ -256,10 +262,13 @@ npmguard is a **free scanner + on-chain registry for npm *code***. MARS is a **m
 ---
 
 ## 9. Demo (≤ 3 min)
-1. Developer posts a clean **"Price Checker"**, picks a quick audit → the winning auditor verifies (coingecko only) → **✅ VERIFIED** on HCS, **HTS verified token** minted.
-2. A user agent pays **Arc x402** → mints the **HTS license** → uses it.
-3. Developer posts a poisoned **"Portfolio Helper"** → the auditor's sandbox catches it read keys + call `setApprovalForAll` → **🟥 DANGEROUS** → blocked. *(Show: `npm audit` says it's clean; MARS catches it.)*
-4. Show the **Chainlink attestation** verifying on-chain (verdict can't be forged) and an **auditor getting slashed** for a wrong call.
+
+> **🎤 Pitch reminder — lead with the AUTONOMY, not the plumbing.** MARS is an **agent-to-agent economy**: a consumer agent, *on its own*, hires from a **competing swarm of auditor agents**, negotiates in a Flora room, pays per-use via x402, and trusts only an attested verdict — **no human in the loop on the standard path**. Pitch the *decisions agents make* (who to hire · what to pay · what to trust), frame every actor as an **autonomous agent**, and keep humans at the edges (premium SOC-2 only). Open the demo out loud with: *"Everything you're about to see is agents transacting with agents — MARS is the App Store agents run themselves."* Narrate each step from the **agent's** POV ("an agent needs a price feed →…"), not the developer's.
+
+1. A **developer's agent** posts a clean **"Price Checker"** + RFQ → **auditor agents quote**, negotiate in the Flora room → the dev's agent **picks one** (price × reputation) → the winner verifies (coingecko only) → **✅ VERIFIED** on HCS, **HTS verified token** minted.
+2. A **consumer agent** needs a price feed → sees **✅ VERIFIED** → pays **Arc x402 (direct nanopayment)** → mints the **HTS license** → runs it through the verified link.
+3. A **developer's agent** posts a poisoned **"Portfolio Helper"** → the **auditor agent's** sandbox catches it read keys + call `setApprovalForAll` → **🟥 DANGEROUS** → blocked. *(Show: `npm audit` says it's clean; MARS catches it.)*
+4. Show the **Chainlink attestation** verifying on-chain (verdict can't be forged), the **auditor's rating rise** for the clean call, and an **auditor getting slashed** (bond + reputation) for a wrong one.
 
 ---
 
@@ -282,7 +291,7 @@ npmguard is a **free scanner + on-chain registry for npm *code***. MARS is a **m
 ## 12. Future Enhancements (the vision to pitch)
 *MVP = the RFQ board + a single selected auditor. The story of where it goes:*
 
-- **Negotiated audit marketplace** — the developer negotiates not just **rate + time + scope**, but the required **professionalism & compliance** (e.g. **SOC 2 / enterprise / ISO**); certified audit firms quote for premium jobs and the developer picks the auditor.
+- **Negotiated audit marketplace** — the developer's agent negotiates not just **rate + time + scope**, but the required **professionalism & compliance** (e.g. **SOC 2 / enterprise / ISO**); certified audit firms quote for premium jobs and the agent picks the auditor.
 - **Open Flora rooms (HCS-16)** — a shared space where any AI agent (auditors, requesters, even outside agents) can **join & talk** — discover requests, clarify scope, negotiate quotes, coordinate — turning the marketplace into a live multi-agent venue. *(Reused for communication, not voting.)*
 - **Multi-auditor consensus (corroboration)** — for high-value skills, several auditors independently audit and must **agree** before VERIFIED; disagreement escalates. *(Far-future; the MVP is single-auditor RFQ, not voting.)*
 - **Automatic re-audit on update** — a Hedera **Scheduled Transaction** re-triggers the audit when a skill ships a new version; the old license token goes stale.
