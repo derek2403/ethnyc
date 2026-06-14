@@ -48,3 +48,7 @@ next-env.d.ts
 /pages/api/tee
 /db
 /skills
+/demo/auditors
+/demo/hermes
+/demo/DEMO.md
+.hermes.md
