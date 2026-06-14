@@ -211,6 +211,16 @@ export default function Page1() {
           border-color: var(--hair);
           background: rgba(0, 0, 0, 0.03);
         }
+        /* Connect Agent · connected-agent cards (link to HashScan) */
+        .ca-agent-card {
+          border: 1px solid var(--hair-soft);
+          background: var(--inset);
+          transition: border-color 0.15s ease, background 0.15s ease;
+        }
+        .ca-agent-card:hover {
+          border-color: var(--mars-soft);
+          background: rgba(194, 84, 42, 0.05);
+        }
         .body-hit-comm:hover {
           stroke: var(--comm);
           stroke-width: 1;

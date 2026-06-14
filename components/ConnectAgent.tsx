@@ -1,14 +1,96 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Popout from "./Popout";
 import AgentRegister from "./AgentRegister";
+import { useMars } from "./marsState";
 
 // ── Cell E · Connect Agent ───────────────────────────────────────────────
 // Agents register / log in by curling the API. The cell hands out the commands.
 //   Register → User (audit & license skills from OpenClaw / Hermes / any agent)
 //            → Auditor (run the audit pipeline; prerequisites apply)
 //   Connect  → CLI login that loads the agent's saved profile from the DB.
+//
+// The home view shows a live roster of connected agents, polled from the DB via
+// useMars(). When a `curl …/api/register-cli` finishes it persists the agent, so
+// it pops in here within ~1s — flagged "just connected" for a few seconds.
 
 type Mode = "home" | "register" | "connect";
+
+interface ConnectedAgent {
+  id: string;
+  role: "user" | "auditor";
+  verified: boolean;
+  evm: string | null;
+  humanId: string | null;
+  votingTopic: string | null;
+  reviewTopic: string | null;
+  profileTopic: string | null;
+  accountMemo: string | null;
+  registrySeq: string | number | null;
+  rating: number;
+  registeredAt: string | null;
+}
+
+// Hedera account explorer — same link the curl flow prints (lib/hedera.hashscan).
+const hashscanAccount = (id: string) => `https://hashscan.io/testnet/account/${id}`;
+// Middle-ellipsis for long hashes (evm address, human id) — full value in title.
+const short = (s: string | null, head = 10, tail = 6) =>
+  s && s.length > head + tail + 1 ? `${s.slice(0, head)}…${s.slice(-tail)}` : s || "—";
+
+function Field({ label, value, title }: { label: string; value: string; title?: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
+      <span style={{ fontSize: 9, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--ink-3)", flex: "none" }}>{label}</span>
+      <span title={title ?? value} style={{ fontFamily: "var(--code)", fontSize: 10, color: "var(--ink-2)", minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", textAlign: "right" }}>{value}</span>
+    </div>
+  );
+}
+
+// One connected agent. The whole card is a link to its HashScan account page.
+function AgentCard({ a, fresh }: { a: ConnectedAgent; fresh: boolean }) {
+  const roleColor = a.role === "auditor" ? "var(--comm)" : "var(--warn)";
+  return (
+    <a
+      className="ca-agent-card"
+      href={hashscanAccount(a.id)}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`Open ${a.id} on HashScan ↗`}
+      style={
+        fresh
+          ? { display: "block", textDecoration: "none", borderRadius: 9, padding: "10px 12px", border: "1px solid var(--safe)", background: "rgba(31,157,99,0.08)" }
+          : { display: "block", textDecoration: "none", borderRadius: 9, padding: "10px 12px" }
+      }
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: "50%",
+            flex: "none",
+            background: a.verified ? "var(--safe)" : "var(--ink-3)",
+            animation: fresh ? "onlinePulse 1.4s ease-in-out infinite" : "none",
+          }}
+        />
+        <span style={{ fontFamily: "var(--code)", fontSize: 11.5, fontWeight: 500, color: "var(--ink)", flex: 1, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{a.id}</span>
+        {fresh && <span style={{ fontSize: 8.5, color: "var(--safe)", letterSpacing: ".08em", textTransform: "uppercase", flex: "none" }}>just connected</span>}
+        <span style={{ fontSize: 9, color: roleColor, border: "1px solid var(--hair-soft)", padding: "1px 6px", borderRadius: 6, textTransform: "uppercase", letterSpacing: ".06em", flex: "none" }}>{a.role}</span>
+        <span style={{ fontSize: 9.5, color: "var(--ink-3)", flex: "none" }}>↗ explorer</span>
+      </div>
+      <div style={{ marginTop: 9, paddingTop: 9, borderTop: "1px solid var(--hair-soft)", display: "flex", flexDirection: "column", gap: 5 }}>
+        <Field label="evm" value={short(a.evm)} title={a.evm ?? undefined} />
+        <Field label="world id" value={a.verified ? `✓ ${short(a.humanId)}` : "unverified"} title={a.humanId ?? undefined} />
+        <Field label="voting" value={a.votingTopic ?? "—"} />
+        <Field label="review" value={a.reviewTopic ?? "—"} />
+        <Field label="profile" value={a.profileTopic ?? "—"} />
+        <Field label="memo" value={a.accountMemo ?? "—"} />
+        <Field label="registry" value={a.registrySeq != null ? `#${a.registrySeq}` : "—"} />
+        <Field label="rating" value={`${a.rating.toFixed(1)} / 5`} />
+        <Field label="registered" value={(a.registeredAt ?? "").slice(0, 10) || "—"} title={a.registeredAt ?? undefined} />
+      </div>
+    </a>
+  );
+}
 
 function Cmd({ cmd }: { cmd: string }) {
   const [copied, setCopied] = useState(false);
@@ -47,12 +129,71 @@ function BackBtn({ onClick }: { onClick: () => void }) {
 const AUDITOR_PREREQS = ["World-ID verified", "can run the audit pipeline (OpenAI key)", "bond staked (slashed on a wrong verdict)", "sandbox/fork runtime for deeper tiers"];
 
 export default function ConnectAgent() {
+  const { state, ready } = useMars();
   const [mode, setMode] = useState<Mode>("home");
   const [reg, setReg] = useState<"user" | "auditor" | null>(null);
   const [base, setBase] = useState("https://mars.derek2403.win");
   useEffect(() => {
     if (typeof window !== "undefined") setBase(window.location.origin);
   }, []);
+
+  // Live roster of connected agents (registered users + auditors), polled from
+  // the DB. worldId is "—" when unverified (see deriveState in lib/db.mjs).
+  const toAgent = (a: (typeof state.users)[number] | (typeof state.auditors)[number], role: "user" | "auditor"): ConnectedAgent => ({
+    id: a.id,
+    role,
+    verified: a.worldVerified ?? a.worldId !== "—",
+    evm: a.evm ?? null,
+    humanId: a.humanId ?? (a.worldId !== "—" ? a.worldId : null),
+    votingTopic: a.votingTopic ?? null,
+    reviewTopic: a.reviewTopic ?? null,
+    profileTopic: a.profileTopic ?? null,
+    accountMemo: a.accountMemo ?? null,
+    registrySeq: a.registrySeq ?? null,
+    rating: a.rating ?? 0,
+    registeredAt: a.registeredAt ?? null,
+  });
+  const agents: ConnectedAgent[] = [
+    ...state.users.map((u) => toAgent(u, "user")),
+    ...state.auditors.map((a) => toAgent(a, "auditor")),
+  ];
+  const idsKey = agents.map((a) => a.id).join(",");
+
+  // Flash agents that appear after the first load (i.e. a curl just finished).
+  // Existing agents present on first poll are seeded silently — they don't flash.
+  const seenRef = useRef<Set<string>>(new Set());
+  const initRef = useRef(false);
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const [fresh, setFresh] = useState<Set<string>>(new Set());
+  useEffect(() => () => timersRef.current.forEach(clearTimeout), []);
+  useEffect(() => {
+    if (!ready) return;
+    const ids = agents.map((a) => a.id);
+    if (!initRef.current) {
+      ids.forEach((id) => seenRef.current.add(id));
+      initRef.current = true;
+      return;
+    }
+    const incoming = ids.filter((id) => !seenRef.current.has(id));
+    if (!incoming.length) return;
+    incoming.forEach((id) => seenRef.current.add(id));
+    setFresh((prev) => new Set([...prev, ...incoming]));
+    // Per-batch timer (not cancelled on re-run, so back-to-back registrations
+    // each clear on their own 6s schedule); all torn down on unmount above.
+    timersRef.current.push(
+      setTimeout(() => {
+        setFresh((prev) => {
+          const next = new Set(prev);
+          incoming.forEach((id) => next.delete(id));
+          return next;
+        });
+      }, 6000)
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, idsKey]);
+
+  // Freshly-connected float to the top; the rest keep newest-first order.
+  const roster = [...agents].reverse().sort((a, b) => Number(fresh.has(b.id)) - Number(fresh.has(a.id)));
 
   // Streaming curl: creates the account, prints the World-ID verify QR in your
   // terminal, polls AgentBook, then finishes (voting/review/profile/registry).
@@ -83,11 +224,19 @@ export default function ConnectAgent() {
           </svg>
           <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink)" }}>Connect Agent</span>
         </div>
-        {mode !== "home" && <span style={{ fontSize: 9.5, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--ink-3)" }}>{mode}</span>}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {mode !== "home" && <span style={{ fontSize: 9.5, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--ink-3)" }}>{mode}</span>}
+          <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: agents.length ? "var(--safe)" : "var(--ink-3)" }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: agents.length ? "var(--safe)" : "var(--ink-3)" }} />
+            {agents.length} connected
+          </span>
+        </div>
       </div>
 
       <div className="no-bar" style={{ flex: 1, minHeight: 0, padding: 16, overflow: "auto", display: "flex", flexDirection: "column" }}>
-        {mode === "home" && (
+        {/* Once any agent is connected, the cell becomes its roster + profiles.
+            Before that, it shows the onboarding intro + register/connect. */}
+        {mode === "home" && roster.length === 0 && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
             <div style={{ fontSize: 12.5, color: "var(--ink-2)", textAlign: "center", maxWidth: 360, lineHeight: 1.5 }}>
               Onboard your agent to MARS — register a new identity, or log back into an existing one.
@@ -104,6 +253,34 @@ export default function ConnectAgent() {
                 style={{ background: "none", border: "1px solid var(--hair)", color: "var(--ink-2)", fontFamily: "var(--sans)", fontSize: 12, fontWeight: 500, padding: "9px 22px", cursor: "pointer", borderRadius: 8 }}
               >
                 Connect
+              </button>
+            </div>
+          </div>
+        )}
+
+        {mode === "home" && roster.length > 0 && (
+          <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: ".1em", color: "var(--ink-3)", textTransform: "uppercase" }}>Connected agents</span>
+              <span style={{ fontSize: 9.5, color: "var(--ink-3)" }}>{state.stats.users} users · {state.stats.auditors} auditors · tap → explorer</span>
+            </div>
+            <div className="no-bar" style={{ flex: 1, minHeight: 0, overflow: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+              {roster.map((a) => (
+                <AgentCard key={a.id} a={a} fresh={fresh.has(a.id)} />
+              ))}
+            </div>
+            <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                onClick={() => setMode("register")}
+                style={{ background: "none", border: "1px solid var(--mars-soft)", color: "var(--mars)", fontSize: 10.5, fontWeight: 500, padding: "6px 12px", cursor: "pointer", borderRadius: 7 }}
+              >
+                + register another
+              </button>
+              <button
+                onClick={() => setMode("connect")}
+                style={{ background: "none", border: "1px solid var(--hair)", color: "var(--ink-2)", fontSize: 10.5, fontWeight: 500, padding: "6px 12px", cursor: "pointer", borderRadius: 7 }}
+              >
+                connect existing
               </button>
             </div>
           </div>
