@@ -9,6 +9,7 @@ interface WorldIdVerificationProps {
   setStatus: (s: string) => void;
   appId: `app_${string}`;
   rpId: string;
+  onVerified?: (data: { success: boolean; onchain?: { nullifier?: string } | null }) => void;
 }
 
 export default function WorldIdVerification({
@@ -17,6 +18,7 @@ export default function WorldIdVerification({
   setStatus,
   appId,
   rpId,
+  onVerified,
 }: WorldIdVerificationProps) {
   const [qrUrl, setQrUrl] = useState<string | null>(null);
 
@@ -86,6 +88,7 @@ export default function WorldIdVerification({
       if (verifyData.success) {
         setVerified(true);
         setStatus("");
+        onVerified?.(verifyData);
       } else {
         setStatus(verifyData.error ?? "Proof verification failed");
       }
