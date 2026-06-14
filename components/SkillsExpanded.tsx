@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMars } from "./marsState";
 import { Eyebrow, SkillDetail, VerdictPill } from "./MarsUI";
+import SkillAuditHistory from "./SkillAuditHistory";
 
 // Expanded Skills Verified — list of verified skills; click to see audit
 // history, version history and usage.
@@ -52,7 +53,15 @@ export default function SkillsExpanded() {
       </div>
       <div className="no-bar" style={{ flex: 1, minWidth: 0, overflow: "auto", padding: "26px 30px" }}>
         <div style={{ maxWidth: 640 }}>
-          {skill ? <SkillDetail s={skill} /> : <div style={{ fontSize: 13, color: "var(--ink-3)" }}>No verified skills yet.</div>}
+          {skill ? (
+            <>
+              <SkillDetail s={skill} />
+              {/* full audit trail + synthesizer verdict + TEE attestation per version */}
+              <SkillAuditHistory skillId={skill.id} />
+            </>
+          ) : (
+            <div style={{ fontSize: 13, color: "var(--ink-3)" }}>No verified skills yet.</div>
+          )}
         </div>
       </div>
     </div>
