@@ -11,9 +11,13 @@
 // On a clean verdict the skill is listed as PREMIUM: every later per-use purchase pays the
 // author a royalty on BOTH rails — Arc x402 split (buyer pays the escrow developer = author)
 // and a Hedera license NFT carrying a real CustomRoyaltyFee.
+//
+// Visual language follows pages/page1.tsx: soft light "analytics" theme, Inter type, the
+// shared design tokens (--cell / --ink / --hair / --mars / --safe …) declared once below.
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useCallback, useEffect, useState } from "react";
 import Head from "next/head";
+import Link from "next/link";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import {
   useAccount,
@@ -268,239 +272,361 @@ export default function Publish() {
   const funded = jobData?.status === 2 || jobData?.status === 3;
   const settled = jobData?.status === 3;
 
-  // ── styles ─────────────────────────────────────────────────────────
-  const card = "rounded-xl border border-zinc-800 bg-zinc-950/60 p-4";
-  const label = "text-xs uppercase tracking-wide text-zinc-500";
-  const input = "rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100 outline-none focus:border-indigo-500";
-
   return (
-    <div className="min-h-screen bg-black px-6 py-10 font-sans text-zinc-100">
-      <Head><title>MARS · publish a premium skill</title></Head>
-      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-5 lg:grid-cols-3">
-        <header className="flex flex-wrap items-start justify-between gap-3 lg:col-span-3">
-          <div>
-            <h1 className="text-2xl font-semibold">Publish a Premium Skill</h1>
-            <p className="mt-1 max-w-2xl text-sm text-zinc-400">
-              Verify you&apos;re human, fund the audit on-chain (Arc escrow), and on a clean verdict your skill is
-              minted VERIFIED on Hedera with a real author <strong>royalty</strong> — every later use pays you a cut
-              on both rails (Arc x402 split + Hedera CustomRoyaltyFee).
-            </p>
+    <div className="pub-page">
+      <Head>
+        <title>MARS · publish a premium skill</title>
+      </Head>
+
+      <div className="pub-wrap">
+        <header className="pub-header">
+          <div className="flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.svg" alt="MARS" style={{ height: 30, width: "auto", display: "block" }} />
+            <div>
+              <h1 className="pub-h1">Publish a Premium Skill</h1>
+              <p className="pub-sub">
+                Verify you&apos;re human, fund the audit on-chain (Arc escrow), and on a clean verdict your skill is minted
+                VERIFIED on Hedera with a real author <strong style={{ color: "var(--mars)" }}>royalty</strong> — every later
+                use pays you a cut on both rails (Arc x402 split + Hedera CustomRoyaltyFee).
+              </p>
+            </div>
           </div>
           {mounted && <ConnectButton />}
         </header>
 
         {mounted && isConnected && !onArc && (
-          <div className="flex items-center justify-between rounded-xl border border-amber-700/50 bg-amber-900/20 p-4 text-sm text-amber-200 lg:col-span-3">
+          <div className="pub-banner pub-banner--warn">
             <span>Wrong network — switch to Arc Testnet ({arcTestnet.id}).</span>
-            <button onClick={() => switchChain({ chainId: arcTestnet.id })} className="rounded-md bg-amber-600 px-3 py-1.5 font-medium text-white hover:bg-amber-500">Switch to Arc</button>
+            <button onClick={() => switchChain({ chainId: arcTestnet.id })} className="pub-btn pub-btn--mars">Switch to Arc</button>
           </div>
         )}
 
-        {/* LEFT — the flow */}
-        <main className="flex flex-col gap-5 lg:col-span-2">
-          {/* 1 · World ID */}
-          <div className={card}>
-            <StepHead n={1} title="Verify you're human (World ID)" done={step1Done} />
-            {verified ? (
-              <p className="text-sm text-emerald-300">✓ Verified as a unique human{humanId ? ` · ${short(humanId)}` : ""}.</p>
-            ) : worldConfigured ? (
-              <div className="[&_*]:!text-zinc-200">
-                <WorldIdVerification
-                  verified={verified}
-                  setVerified={setVerified}
-                  setStatus={setWorldStatus}
-                  appId={APP_ID!}
-                  rpId={RP_ID!}
-                  onVerified={(d) => setHumanId(d?.onchain?.nullifier ?? null)}
-                />
-                {worldStatus && <p className="mt-2 text-xs text-zinc-400">{worldStatus}</p>}
-              </div>
-            ) : (
-              <div className="text-sm text-amber-300">
-                World ID not configured (set <code>NEXT_PUBLIC_WORLD_APP_ID</code> / <code>NEXT_PUBLIC_RP_ID</code>).
-                <button onClick={() => setVerified(true)} className="ml-3 rounded-md bg-zinc-700 px-3 py-1.5 text-xs text-white hover:bg-zinc-600">Skip (dev)</button>
-              </div>
-            )}
-          </div>
+        <div className="pub-grid">
+          {/* LEFT — the flow */}
+          <main className="flex flex-col gap-4">
+            {/* 1 · World ID */}
+            <section className="pub-card">
+              <StepHead n={1} title="Verify you're human (World ID)" done={step1Done} />
+              {verified ? (
+                <p className="t-safe" style={{ fontSize: 13 }}>✓ Verified as a unique human{humanId ? ` · ${short(humanId)}` : ""}.</p>
+              ) : worldConfigured ? (
+                <div>
+                  <WorldIdVerification
+                    verified={verified}
+                    setVerified={setVerified}
+                    setStatus={setWorldStatus}
+                    appId={APP_ID!}
+                    rpId={RP_ID!}
+                    onVerified={(d) => setHumanId(d?.onchain?.nullifier ?? null)}
+                  />
+                  {worldStatus && <p className="t-ink3 mt-2" style={{ fontSize: 12 }}>{worldStatus}</p>}
+                </div>
+              ) : (
+                <div className="t-warn" style={{ fontSize: 13 }}>
+                  World ID not configured (set <code className="pub-code">NEXT_PUBLIC_WORLD_APP_ID</code> / <code className="pub-code">NEXT_PUBLIC_RP_ID</code>).
+                  <button onClick={() => setVerified(true)} className="pub-btn pub-btn--ghost ml-3" style={{ padding: "5px 10px", fontSize: 12 }}>Skip (dev)</button>
+                </div>
+              )}
+            </section>
 
-          {/* 2 · wallet + hedera id */}
-          <div className={`${card} ${!step1Done ? "pointer-events-none opacity-40" : ""}`}>
-            <StepHead n={2} title="Connect your wallet + payout identity" done={step2Done} />
-            {!isConnected ? (
-              <p className="text-sm text-zinc-400">Connect a wallet (top-right). Need test USDC? <a className="text-indigo-400 hover:underline" href="https://faucet.circle.com" target="_blank" rel="noreferrer">faucet.circle.com</a> (Arc Testnet).</p>
-            ) : (
+            {/* 2 · wallet + hedera id */}
+            <section className={`pub-card ${!step1Done ? "pub-locked" : ""}`}>
+              <StepHead n={2} title="Connect your wallet + payout identity" done={step2Done} />
+              {!isConnected ? (
+                <p className="t-ink2" style={{ fontSize: 13 }}>Connect a wallet (top-right). Need test USDC? <a className="pub-link" href="https://faucet.circle.com" target="_blank" rel="noreferrer">faucet.circle.com</a> (Arc Testnet).</p>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <div className="t-ink3" style={{ fontSize: 12 }}>Arc wallet (escrow developer · x402 royalty payee): <span className="pub-code t-ink">{short(address)}</span></div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="pub-label">Hedera account id</span>
+                    <input className="pub-input" style={{ width: 176 }} placeholder="0.0.xxxxx" value={hederaId} onChange={(e) => setHederaId(e.target.value.trim())} />
+                    <span className="t-ink3" style={{ fontSize: 12 }}>= the on-chain CustomRoyaltyFee collector</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3" style={{ borderTop: "1px solid var(--hair-soft)", paddingTop: 12 }}>
+                    <span className="pub-label">Gateway (to receive x402)</span>
+                    <input className="pub-input" style={{ width: 80 }} value={regAmt} onChange={(e) => setRegAmt(e.target.value)} />
+                    <button onClick={registerGateway} disabled={reg.busy || !onArc} className="pub-btn pub-btn--comm">{reg.busy ? "registering…" : "Register / deposit"}</button>
+                    <span className="t-ink2" style={{ fontSize: 13 }}>balance: <span className="t-ink">{gwBal ?? "…"}</span> USDC</span>
+                    {reg.done && reg.tx && <a className="pub-link" style={{ fontSize: 12 }} href={explorerTx(reg.tx)} target="_blank" rel="noreferrer">tx ↗</a>}
+                  </div>
+                  {reg.error && <p className="pub-note pub-note--danger">{reg.error}</p>}
+                </div>
+              )}
+            </section>
+
+            {/* 3 · terms */}
+            <section className={`pub-card ${!step2Done ? "pub-locked" : ""}`}>
+              <StepHead n={3} title="Describe the skill + premium terms" done={!!jobId} />
               <div className="flex flex-col gap-3">
-                <div className="text-xs text-zinc-500">Arc wallet (escrow developer · x402 royalty payee): <span className="font-mono text-zinc-300">{short(address)}</span></div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={label}>Hedera account id</span>
-                  <input className={`${input} w-44`} placeholder="0.0.xxxxx" value={hederaId} onChange={(e) => setHederaId(e.target.value.trim())} />
-                  <span className="text-xs text-zinc-500">= the on-chain CustomRoyaltyFee collector</span>
+                <div className="flex flex-col gap-1">
+                  <span className="pub-label">Skill</span>
+                  <select className="pub-input" style={{ width: "100%" }} value={skillRef} onChange={(e) => setSkillRef(e.target.value)}>
+                    {DEMO_SKILLS.map((s) => <option key={s.ref} value={s.ref}>{s.label}</option>)}
+                  </select>
                 </div>
-                <div className="flex flex-wrap items-center gap-3 border-t border-zinc-800 pt-3">
-                  <span className={label}>Gateway (to receive x402)</span>
-                  <input className={`${input} w-20`} value={regAmt} onChange={(e) => setRegAmt(e.target.value)} />
-                  <button onClick={registerGateway} disabled={reg.busy || !onArc} className="rounded-md bg-sky-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-sky-500 disabled:opacity-40">{reg.busy ? "registering…" : "Register / deposit"}</button>
-                  <span className="text-sm text-zinc-400">balance: <span className="text-zinc-100">{gwBal ?? "…"}</span> USDC</span>
-                  {reg.done && reg.tx && <a className="text-xs text-indigo-400 hover:underline" href={explorerTx(reg.tx)} target="_blank" rel="noreferrer">tx ↗</a>}
-                </div>
-                {reg.error && <p className="rounded-md border border-rose-800/50 bg-rose-900/30 p-2 text-xs text-rose-300">{reg.error}</p>}
-              </div>
-            )}
-          </div>
-
-          {/* 3 · terms */}
-          <div className={`${card} ${!step2Done ? "pointer-events-none opacity-40" : ""}`}>
-            <StepHead n={3} title="Describe the skill + premium terms" done={!!jobId} />
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1">
-                <span className={label}>Skill</span>
-                <select className={`${input} w-full`} value={skillRef} onChange={(e) => setSkillRef(e.target.value)}>
-                  {DEMO_SKILLS.map((s) => <option key={s.ref} value={s.ref}>{s.label}</option>)}
-                </select>
-              </div>
-              <div className="flex flex-wrap items-end gap-4">
-                <div className="flex flex-col gap-1"><span className={label}>Audit fee (USDC)</span><input className={`${input} w-24`} value={fee} onChange={(e) => setFee(e.target.value)} /></div>
-                <div className="flex flex-col gap-1"><span className={label}>Auditor bond (USDC)</span><input className={`${input} w-24`} value={bond} onChange={(e) => setBond(e.target.value)} /></div>
-                <div className="flex min-w-[14rem] flex-col gap-1">
-                  <span className={label}>Author royalty <span className="text-fuchsia-300">{royalty}%</span> per use</span>
-                  <input type="range" min={1} max={50} value={royalty} onChange={(e) => setRoyalty(Number(e.target.value))} className="accent-fuchsia-500" />
+                <div className="flex flex-wrap items-end gap-4">
+                  <div className="flex flex-col gap-1"><span className="pub-label">Audit fee (USDC)</span><input className="pub-input" style={{ width: 96 }} value={fee} onChange={(e) => setFee(e.target.value)} /></div>
+                  <div className="flex flex-col gap-1"><span className="pub-label">Auditor bond (USDC)</span><input className="pub-input" style={{ width: 96 }} value={bond} onChange={(e) => setBond(e.target.value)} /></div>
+                  <div className="flex min-w-[14rem] flex-col gap-1">
+                    <span className="pub-label">Author royalty <span className="t-mars" style={{ fontWeight: 700 }}>{royalty}%</span> per use</span>
+                    <input type="range" min={1} max={50} value={royalty} onChange={(e) => setRoyalty(Number(e.target.value))} className="pub-range" />
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
+            </section>
 
-          {/* 4 · on-chain escrow */}
-          <div className={`${card} ${!step2Done ? "pointer-events-none opacity-40" : ""}`}>
-            <StepHead n={4} title="Fund the audit on-chain (MarsEscrow · Arc)" done={!!funded} />
-            <div className="flex flex-wrap items-center gap-3">
-              <Btn onClick={doApprove} tone="zinc" disabled={busy || !onArc}>Approve USDC</Btn>
-              <Btn onClick={doCreate} disabled={busy || !onArc || allowanceNum <= 0}>Create job</Btn>
-              <Btn onClick={doFund} disabled={busy || !jobId || !onArc}>Fund fee (you)</Btn>
-              <button onClick={doBond} disabled={!jobId || bondBusy} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-40">{bondBusy ? "agent posting…" : "Post bond (agent)"}</button>
-            </div>
-            <p className="mt-2 text-xs text-zinc-500">developer = you · auditor = MARS agent {agent?.address ? short(agent.address) : agentErr ? <span className="text-amber-400">unavailable</span> : "…"} · fee + bond lock in escrow, released to the auditor on a clean verdict.</p>
-            {agentErr && !agent?.address && <p className="mt-1 text-xs text-amber-400">Auditor agent wallet not loaded: {agentErr} — set <code>ARC_PRIVATE_KEY</code> in <code>hardhat/.env</code> or <code>.env.local</code>, then restart the dev server.</p>}
-            {jobData && jobId > 0 && (
-              <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                <Stat k="Job">#{jobId}</Stat>
-                <Stat k="Status"><Badge label={STATUS_LABELS[jobData.status] ?? "Unknown"} /></Stat>
-                <Stat k="Fee funded">{jobData.feeFunded ? "✅" : "—"}</Stat>
-                <Stat k="Bond posted">{jobData.bondPosted ? "✅" : "—"}</Stat>
+            {/* 4 · on-chain escrow */}
+            <section className={`pub-card ${!step2Done ? "pub-locked" : ""}`}>
+              <StepHead n={4} title="Fund the audit on-chain (MarsEscrow · Arc)" done={!!funded} />
+              <div className="flex flex-wrap items-center gap-2">
+                <Btn onClick={doApprove} tone="ghost" disabled={busy || !onArc}>Approve USDC</Btn>
+                <Btn onClick={doCreate} tone="ink" disabled={busy || !onArc || allowanceNum <= 0}>Create job</Btn>
+                <Btn onClick={doFund} tone="ink" disabled={busy || !jobId || !onArc}>Fund fee (you)</Btn>
+                <button onClick={doBond} disabled={!jobId || bondBusy} className="pub-btn pub-btn--comm">{bondBusy ? "agent posting…" : "Post bond (agent)"}</button>
               </div>
-            )}
-            {allowanceNum <= 0 && jobId === 0 && <p className="mt-2 text-xs text-amber-400">Approve USDC first so the escrow can pull your fee.</p>}
-            {flowMsg && <p className="mt-2 rounded-md border border-rose-800/50 bg-rose-900/30 p-2 text-xs text-rose-300">{flowMsg}</p>}
-            {errMsg && <p className="mt-2 rounded-md border border-rose-800/50 bg-rose-900/30 p-2 text-xs text-rose-300">{errMsg}</p>}
-          </div>
+              <p className="t-ink3 mt-2" style={{ fontSize: 12 }}>developer = you · auditor = MARS agent {agent?.address ? short(agent.address) : agentErr ? <span className="t-warn">unavailable</span> : "…"} · fee + bond lock in escrow, released to the auditor on a clean verdict.</p>
+              {agentErr && !agent?.address && <p className="t-warn mt-1" style={{ fontSize: 12 }}>Auditor agent wallet not loaded: {agentErr} — set <code className="pub-code">ARC_PRIVATE_KEY</code> in <code className="pub-code">hardhat/.env</code> or <code className="pub-code">.env.local</code>, then restart the dev server.</p>}
+              {jobData && jobId > 0 && (
+                <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <Stat k="Job">#{jobId}</Stat>
+                  <Stat k="Status"><Badge label={STATUS_LABELS[jobData.status] ?? "Unknown"} /></Stat>
+                  <Stat k="Fee funded">{jobData.feeFunded ? "✅" : "—"}</Stat>
+                  <Stat k="Bond posted">{jobData.bondPosted ? "✅" : "—"}</Stat>
+                </div>
+              )}
+              {allowanceNum <= 0 && jobId === 0 && <p className="t-warn mt-2" style={{ fontSize: 12 }}>Approve USDC first so the escrow can pull your fee.</p>}
+              {flowMsg && <p className="pub-note pub-note--danger">{flowMsg}</p>}
+              {errMsg && <p className="pub-note pub-note--danger">{errMsg}</p>}
+            </section>
 
-          {/* 5 · run audit */}
-          <div className={`${card} ${!funded ? "pointer-events-none opacity-40" : ""}`}>
-            <StepHead n={5} title="Run the audit (real 4-stage pipeline · Hedera HCS)" done={!!audit} />
-            <Btn onClick={runAudit} tone="indigo" disabled={auditing || !funded}>{auditing ? "auditing…" : "Run audit"}</Btn>
-            {audit && (
-              <div className="mt-3 flex flex-col gap-2">
-                <ul className="flex flex-col gap-1 text-sm">
-                  {audit.stages.map((s, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <span className={s.status === "fail" ? "text-rose-400" : s.status === "warn" ? "text-amber-400" : "text-emerald-400"}>{s.status === "fail" ? "✗" : s.status === "warn" ? "!" : "✓"}</span>
-                      <span className="text-zinc-300"><span className="font-medium text-zinc-100">{s.stage}</span> — {s.summary}</span>
+            {/* 5 · run audit */}
+            <section className={`pub-card ${!funded ? "pub-locked" : ""}`}>
+              <StepHead n={5} title="Run the audit (real 4-stage pipeline · Hedera HCS)" done={!!audit} />
+              <Btn onClick={runAudit} tone="ink" disabled={auditing || !funded}>{auditing ? "auditing…" : "Run audit"}</Btn>
+              {audit && (
+                <div className="mt-3 flex flex-col gap-2">
+                  <ul className="flex flex-col gap-1" style={{ fontSize: 13 }}>
+                    {audit.stages.map((s, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <span className={s.status === "fail" ? "t-danger" : s.status === "warn" ? "t-warn" : "t-safe"}>{s.status === "fail" ? "✗" : s.status === "warn" ? "!" : "✓"}</span>
+                        <span className="t-ink2"><span className="t-ink" style={{ fontWeight: 600 }}>{s.stage}</span> — {s.summary}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className={`pub-note ${audit.verdict === "SAFE" ? "pub-note--safe" : "pub-note--danger"}`}>
+                    Verdict: <strong>{audit.verdict}</strong> · risk {audit.risk} · trust {audit.trustScore}
+                    {audit.summary && <span className="block mt-1" style={{ opacity: 0.85 }}>{audit.summary}</span>}
+                  </div>
+                  <a className="pub-link" style={{ fontSize: 12 }} href={hashscan("topic", audit.taskTopicId)} target="_blank" rel="noreferrer">audit trail on Hashscan ↗</a>
+                </div>
+              )}
+            </section>
+
+            {/* 6 · settle + publish */}
+            <section className={`pub-card ${!audit || audit.verdict !== "SAFE" ? "pub-locked" : ""}`}>
+              <StepHead n={6} title="Settle escrow + publish premium (on SAFE)" done={!!published} />
+              {!published ? (
+                <>
+                  <Btn onClick={publish} tone="mars" disabled={publishing || !audit || audit.verdict !== "SAFE"}>{publishing ? "publishing…" : `Release escrow + publish (royalty ${royalty}%)`}</Btn>
+                  <p className="t-ink3 mt-2" style={{ fontSize: 12 }}>Releases fee + bond to the auditor{settled ? " (already released)" : ""}, mints the Hedera VERIFIED NFT, and creates a premium license NFT carrying your CustomRoyaltyFee.</p>
+                </>
+              ) : (
+                <div className="pub-note pub-note--safe flex flex-col gap-2">
+                  <p><strong>✓ Published {published.skill}</strong> as a premium skill — royalty {published.royaltyPct}% to {short(hederaId)}.</p>
+                  {published.verified?.tokenId && <p className="t-ink2">VERIFIED NFT: <a className="pub-code pub-link" href={hashscan("token", published.verified.tokenId)} target="_blank" rel="noreferrer">{published.verified.tokenId}#{published.verified.serial} ↗</a></p>}
+                  {published.license?.tokenId && (
+                    <p className="t-ink2">Premium license (royalty): <a className="pub-code pub-link" href={hashscan("token", published.license.tokenId)} target="_blank" rel="noreferrer">{published.license.tokenId} ↗</a>
+                      {published.license.royalty && <span className="t-ink3"> · {published.license.royalty.numerator}/{published.license.royalty.denominator} → {short(published.license.royalty.collector)}</span>}
+                    </p>
+                  )}
+                  <p className="t-ink2" style={{ borderTop: "1px solid var(--hair-soft)", paddingTop: 8 }}>
+                    Buyers pay <span className="t-ink">{price} USDC</span> per use on the <Link className="pub-link" href="/test">marketplace</Link> (job #{jobId}); {royalty}% routes to you as royalty (x402 split + Hedera custom-fee).
+                  </p>
+                </div>
+              )}
+            </section>
+          </main>
+
+          {/* RIGHT — live sidebar */}
+          <aside>
+            <div className="flex flex-col gap-4 lg:sticky lg:top-6">
+              <section className="pub-card">
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="pub-label">Live · balances</span>
+                  <button onClick={() => { refetchAll(); fetchGwBal(); }} className="pub-btn pub-btn--ghost" style={{ padding: "5px 10px", fontSize: 12 }}>Refresh</button>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Stat k="Your USDC">{fmt(usdcBal.data as bigint)}</Stat>
+                  <Stat k="Gateway">{gwBal ?? "…"}</Stat>
+                  <Stat k="Allowance">{fmt(allowance.data as bigint)}</Stat>
+                  <Stat k="Escrow holds">{fmt(escrowBal.data as bigint)}</Stat>
+                  <Stat k="Active job">#{jobId || "—"}</Stat>
+                  <Stat k="Next id">{Number(nextJobId.data ?? 1n)}</Stat>
+                </div>
+                {isConnected && address && <p className="t-ink3 mt-3" style={{ fontSize: 12 }}>You: <a className="pub-link" href={explorerAddress(address)} target="_blank" rel="noreferrer">{short(address)}</a></p>}
+              </section>
+
+              <section className="pub-card">
+                <p className="pub-label mb-2">Progress</p>
+                <ul className="flex flex-col gap-1.5" style={{ fontSize: 13 }}>
+                  <Track done={step1Done}>Human verified</Track>
+                  <Track done={step2Done}>Wallet + Hedera id</Track>
+                  <Track done={!!jobId}>Escrow job created</Track>
+                  <Track done={!!funded}>Fee + bond funded</Track>
+                  <Track done={!!audit}>Audit run{audit ? ` (${audit.verdict})` : ""}</Track>
+                  <Track done={!!published}>Published premium</Track>
+                </ul>
+              </section>
+
+              <section className="pub-card">
+                <p className="pub-label mb-2">Activity</p>
+                <ul className="flex flex-col gap-1.5" style={{ fontSize: 13 }}>
+                  {log.length === 0 && <li className="t-ink3">no txs yet</li>}
+                  {log.map((l, i) => (
+                    <li key={i} className="flex items-center gap-2">
+                      <span className={l.ok ? "t-safe" : "t-danger"}>{l.ok ? "✓" : "✕"}</span>
+                      <span className="t-ink2">{l.action}</span>
+                      {l.hash && <a className="pub-link" href={explorerTx(l.hash)} target="_blank" rel="noreferrer">tx ↗</a>}
                     </li>
                   ))}
                 </ul>
-                <div className={`rounded-md border p-2 text-sm ${audit.verdict === "SAFE" ? "border-emerald-800/50 bg-emerald-900/20 text-emerald-300" : "border-rose-800/50 bg-rose-900/30 text-rose-300"}`}>
-                  Verdict: <strong>{audit.verdict}</strong> · risk {audit.risk} · trust {audit.trustScore}
-                  {audit.summary && <p className="mt-1 text-zinc-300">{audit.summary}</p>}
-                </div>
-                <a className="text-xs text-indigo-400 hover:underline" href={hashscan("topic", audit.taskTopicId)} target="_blank" rel="noreferrer">audit trail on Hashscan ↗</a>
-              </div>
-            )}
-          </div>
-
-          {/* 6 · settle + publish */}
-          <div className={`${card} ${!audit || audit.verdict !== "SAFE" ? "pointer-events-none opacity-40" : ""}`}>
-            <StepHead n={6} title="Settle escrow + publish premium (on SAFE)" done={!!published} />
-            {!published ? (
-              <>
-                <Btn onClick={publish} tone="fuchsia" disabled={publishing || !audit || audit.verdict !== "SAFE"}>{publishing ? "publishing…" : `Release escrow + publish (royalty ${royalty}%)`}</Btn>
-                <p className="mt-2 text-xs text-zinc-500">Releases fee + bond to the auditor{settled ? " (already released)" : ""}, mints the Hedera VERIFIED NFT, and creates a premium license NFT carrying your CustomRoyaltyFee.</p>
-              </>
-            ) : (
-              <div className="flex flex-col gap-2 rounded-md border border-emerald-800/50 bg-emerald-900/20 p-3 text-sm">
-                <p className="text-emerald-300">✓ Published <strong>{published.skill}</strong> as a premium skill — royalty {published.royaltyPct}% to {short(hederaId)}.</p>
-                {published.verified?.tokenId && <p className="text-zinc-300">VERIFIED NFT: <a className="font-mono text-indigo-400 hover:underline" href={hashscan("token", published.verified.tokenId)} target="_blank" rel="noreferrer">{published.verified.tokenId}#{published.verified.serial} ↗</a></p>}
-                {published.license?.tokenId && (
-                  <p className="text-zinc-300">Premium license (royalty): <a className="font-mono text-fuchsia-400 hover:underline" href={hashscan("token", published.license.tokenId)} target="_blank" rel="noreferrer">{published.license.tokenId} ↗</a>
-                    {published.license.royalty && <span className="text-zinc-500"> · {published.license.royalty.numerator}/{published.license.royalty.denominator} → {short(published.license.royalty.collector)}</span>}
-                  </p>
-                )}
-                <p className="border-t border-zinc-800 pt-2 text-zinc-400">
-                  Buyers pay <span className="text-zinc-200">{price} USDC</span> per use on the <a className="text-indigo-400 hover:underline" href={`/test`}>marketplace</a> (job #{jobId}); {royalty}% routes to you as royalty (x402 split + Hedera custom-fee).
-                </p>
-              </div>
-            )}
-          </div>
-        </main>
-
-        {/* RIGHT — live sidebar */}
-        <aside className="lg:col-span-1">
-          <div className="flex flex-col gap-5 lg:sticky lg:top-6">
-            <div className={card}>
-              <div className="mb-3 flex items-center justify-between">
-                <span className={label}>Live · balances</span>
-                <button onClick={() => { refetchAll(); fetchGwBal(); }} className="rounded-md bg-zinc-700 px-3 py-1.5 text-xs text-white hover:bg-zinc-600">Refresh</button>
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <Stat k="Your USDC">{fmt(usdcBal.data as bigint)}</Stat>
-                <Stat k="Gateway">{gwBal ?? "…"}</Stat>
-                <Stat k="Allowance">{fmt(allowance.data as bigint)}</Stat>
-                <Stat k="Escrow holds">{fmt(escrowBal.data as bigint)}</Stat>
-                <Stat k="Active job">#{jobId || "—"}</Stat>
-                <Stat k="Next id">{Number(nextJobId.data ?? 1n)}</Stat>
-              </div>
-              {isConnected && address && <p className="mt-3 text-xs text-zinc-500">You: <a className="text-indigo-400 hover:underline" href={explorerAddress(address)} target="_blank" rel="noreferrer">{short(address)}</a></p>}
+              </section>
             </div>
-
-            <div className={card}>
-              <p className="mb-2 text-sm font-medium text-zinc-300">Progress</p>
-              <ul className="flex flex-col gap-1.5 text-sm">
-                <Track done={step1Done}>Human verified</Track>
-                <Track done={step2Done}>Wallet + Hedera id</Track>
-                <Track done={!!jobId}>Escrow job created</Track>
-                <Track done={!!funded}>Fee + bond funded</Track>
-                <Track done={!!audit}>Audit run{audit ? ` (${audit.verdict})` : ""}</Track>
-                <Track done={!!published}>Published premium</Track>
-              </ul>
-            </div>
-
-            <div className={card}>
-              <p className="mb-2 text-sm font-medium text-zinc-300">Activity</p>
-              <ul className="flex flex-col gap-1.5 text-sm">
-                {log.length === 0 && <li className="text-zinc-600">no txs yet</li>}
-                {log.map((l, i) => (
-                  <li key={i} className="flex items-center gap-2">
-                    <span className={l.ok ? "text-emerald-400" : "text-rose-400"}>{l.ok ? "✓" : "✕"}</span>
-                    <span className="text-zinc-300">{l.action}</span>
-                    {l.hash && <a className="text-indigo-400 hover:underline" href={explorerTx(l.hash)} target="_blank" rel="noreferrer">tx ↗</a>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </aside>
+          </aside>
+        </div>
       </div>
+
+      <style jsx global>{`
+        :root {
+          --space: #eef0f4;
+          --space-2: #e6e9ef;
+          --cell: rgba(255, 255, 255, 0.78);
+          --panel: rgba(255, 255, 255, 0.94);
+          --inset: #f1f3f7;
+          --ink: #1b1d24;
+          --ink-2: #565b66;
+          --ink-3: #9498a2;
+          --hair: rgba(0, 0, 0, 0.12);
+          --hair-soft: rgba(0, 0, 0, 0.06);
+          --mars: #c2542a;
+          --safe: #1f9d63;
+          --danger: #d23f2e;
+          --warn: #b9780f;
+          --comm: #2f6fd0;
+          --violet: #5b47d6;
+          --sans: "Inter", system-ui, -apple-system, sans-serif;
+          --code: "Geist Mono", ui-monospace, "SF Mono", monospace;
+        }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; }
+        body {
+          background: radial-gradient(120% 90% at 28% 12%, #ffffff 0%, var(--space) 62%);
+          color: var(--ink);
+          font-family: var(--sans);
+          font-variant-numeric: tabular-nums;
+          -webkit-font-smoothing: antialiased;
+        }
+        .pub-page { min-height: 100vh; }
+        .pub-wrap { max-width: 1120px; margin: 0 auto; padding: 22px 22px 56px; }
+        .pub-header {
+          display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+          gap: 14px; padding-bottom: 16px; margin-bottom: 18px;
+          border-bottom: 1px solid var(--hair);
+        }
+        .pub-h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
+        .pub-sub { margin: 3px 0 0; max-width: 640px; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+        .pub-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+        @media (min-width: 1024px) { .pub-grid { grid-template-columns: 2fr 1fr; } }
+
+        .pub-card {
+          background: var(--cell);
+          border: 1px solid var(--hair);
+          border-radius: 14px;
+          padding: 18px;
+          backdrop-filter: blur(8px);
+        }
+        .pub-locked { opacity: 0.45; pointer-events: none; }
+
+        .pub-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-3); }
+        .pub-code { font-family: var(--code); font-size: 12px; }
+        .t-ink { color: var(--ink); }
+        .t-ink2 { color: var(--ink-2); }
+        .t-ink3 { color: var(--ink-3); }
+        .t-mars { color: var(--mars); }
+        .t-safe { color: var(--safe); }
+        .t-danger { color: var(--danger); }
+        .t-warn { color: var(--warn); }
+        .t-comm { color: var(--comm); }
+        .pub-link { color: var(--comm); }
+        .pub-link:hover { text-decoration: underline; }
+
+        .pub-input {
+          background: #fff;
+          border: 1px solid var(--hair);
+          border-radius: 8px;
+          padding: 7px 10px;
+          font-size: 13px;
+          color: var(--ink);
+          font-family: var(--sans);
+          outline: none;
+        }
+        .pub-input:focus { border-color: var(--comm); box-shadow: 0 0 0 3px rgba(47, 111, 208, 0.12); }
+        .pub-range { accent-color: var(--mars); }
+
+        .pub-btn {
+          border: 1px solid transparent;
+          border-radius: 9px;
+          padding: 8px 14px;
+          font-size: 13px;
+          font-weight: 600;
+          color: #fff;
+          cursor: pointer;
+          transition: filter 0.15s ease, background 0.15s ease;
+        }
+        .pub-btn:disabled { opacity: 0.4; cursor: default; }
+        .pub-btn--ink { background: var(--ink); }
+        .pub-btn--ink:hover:not(:disabled) { filter: brightness(1.35); }
+        .pub-btn--mars { background: var(--mars); }
+        .pub-btn--mars:hover:not(:disabled) { filter: brightness(1.08); }
+        .pub-btn--safe { background: var(--safe); }
+        .pub-btn--safe:hover:not(:disabled) { filter: brightness(1.08); }
+        .pub-btn--comm { background: var(--comm); }
+        .pub-btn--comm:hover:not(:disabled) { filter: brightness(1.08); }
+        .pub-btn--ghost { background: #fff; color: var(--ink); border-color: var(--hair); }
+        .pub-btn--ghost:hover:not(:disabled) { background: var(--inset); }
+
+        .pub-banner {
+          display: flex; align-items: center; justify-content: space-between; gap: 12px;
+          border-radius: 12px; padding: 12px 16px; font-size: 13px; margin-bottom: 16px;
+        }
+        .pub-banner--warn { background: rgba(185, 120, 15, 0.1); border: 1px solid rgba(185, 120, 15, 0.35); color: var(--warn); }
+
+        .pub-note { border-radius: 9px; padding: 9px 11px; font-size: 13px; margin-top: 8px; }
+        .pub-note--danger { background: rgba(210, 63, 46, 0.08); border: 1px solid rgba(210, 63, 46, 0.3); color: var(--danger); }
+        .pub-note--safe { background: rgba(31, 157, 99, 0.1); border: 1px solid rgba(31, 157, 99, 0.32); color: var(--safe); }
+
+        .pub-step {
+          display: flex; align-items: center; justify-content: center;
+          height: 24px; width: 24px; border-radius: 999px; font-size: 12px; font-weight: 700; flex: none;
+        }
+        .pub-step--done { background: var(--safe); color: #fff; }
+        .pub-step--idle { background: var(--inset); color: var(--ink-3); border: 1px solid var(--hair); }
+      `}</style>
     </div>
   );
 }
 
 const BTN_TONES: Record<string, string> = {
-  indigo: "bg-indigo-600 hover:bg-indigo-500",
-  green: "bg-emerald-600 hover:bg-emerald-500",
-  zinc: "bg-zinc-700 hover:bg-zinc-600",
-  fuchsia: "bg-fuchsia-600 hover:bg-fuchsia-500",
+  ink: "pub-btn--ink",
+  mars: "pub-btn--mars",
+  safe: "pub-btn--safe",
+  comm: "pub-btn--comm",
+  ghost: "pub-btn--ghost",
 };
-function Btn({ onClick, children, tone = "indigo", disabled }: { onClick: () => void; children: React.ReactNode; tone?: string; disabled?: boolean }) {
+function Btn({ onClick, children, tone = "ink", disabled }: { onClick: () => void; children: React.ReactNode; tone?: string; disabled?: boolean }) {
   return (
-    <button onClick={onClick} disabled={disabled} className={`rounded-md px-3 py-2 text-sm font-medium text-white transition disabled:opacity-40 ${BTN_TONES[tone]}`}>
+    <button onClick={onClick} disabled={disabled} className={`pub-btn ${BTN_TONES[tone] ?? BTN_TONES.ink}`}>
       {children}
     </button>
   );
@@ -509,8 +635,8 @@ function Btn({ onClick, children, tone = "indigo", disabled }: { onClick: () => 
 function StepHead({ n, title, done }: { n: number; title: string; done?: boolean }) {
   return (
     <div className="mb-3 flex items-center gap-2">
-      <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${done ? "bg-emerald-600 text-white" : "bg-zinc-800 text-zinc-400"}`}>{done ? "✓" : n}</span>
-      <p className="text-sm font-medium text-zinc-200">{title}</p>
+      <span className={`pub-step ${done ? "pub-step--done" : "pub-step--idle"}`}>{done ? "✓" : n}</span>
+      <p className="t-ink" style={{ fontSize: 14, fontWeight: 600 }}>{title}</p>
     </div>
   );
 }
@@ -518,8 +644,8 @@ function StepHead({ n, title, done }: { n: number; title: string; done?: boolean
 function Stat({ k, children }: { k: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-xs uppercase tracking-wide text-zinc-500">{k}</span>
-      <span className="font-medium text-zinc-100">{children}</span>
+      <span className="pub-label">{k}</span>
+      <span className="t-ink" style={{ fontSize: 13, fontWeight: 600 }}>{children}</span>
     </div>
   );
 }
@@ -527,19 +653,22 @@ function Stat({ k, children }: { k: string; children: React.ReactNode }) {
 function Track({ done, children }: { done?: boolean; children: React.ReactNode }) {
   return (
     <li className="flex items-center gap-2">
-      <span className={done ? "text-emerald-400" : "text-zinc-600"}>{done ? "✓" : "○"}</span>
-      <span className={done ? "text-zinc-200" : "text-zinc-500"}>{children}</span>
+      <span className={done ? "t-safe" : "t-ink3"}>{done ? "✓" : "○"}</span>
+      <span className={done ? "t-ink" : "t-ink3"}>{children}</span>
     </li>
   );
 }
 
+const BADGE_TONES: Record<string, string> = {
+  Open: "rgba(185,120,15,0.16);color:var(--warn)",
+  Funded: "rgba(47,111,208,0.16);color:var(--comm)",
+  Settled: "rgba(31,157,99,0.16);color:var(--safe)",
+  Slashed: "rgba(210,63,46,0.16);color:var(--danger)",
+  None: "rgba(0,0,0,0.06);color:var(--ink-3)",
+};
 function Badge({ label }: { label: string }) {
-  const map: Record<string, string> = {
-    Open: "bg-amber-500/20 text-amber-300",
-    Funded: "bg-indigo-500/20 text-indigo-300",
-    Settled: "bg-emerald-500/20 text-emerald-300",
-    Slashed: "bg-rose-500/20 text-rose-300",
-    None: "bg-zinc-700/40 text-zinc-400",
-  };
-  return <span className={`rounded px-2 py-0.5 text-xs font-semibold ${map[label] ?? map.None}`}>{label}</span>;
+  const [bg, color] = (BADGE_TONES[label] ?? BADGE_TONES.None).split(";color:");
+  return (
+    <span style={{ background: bg, color, borderRadius: 6, padding: "2px 8px", fontSize: 12, fontWeight: 600 }}>{label}</span>
+  );
 }
