@@ -1,5 +1,9 @@
-import { AUDITS, VERDICT_COLOR } from "./marsData";
+import { useEffect, useState } from "react";
+import { VERDICT_COLOR } from "./marsData";
 import type { Audit, Auditor, Skill, User, Verdict } from "./marsData";
+import { useMars } from "./marsState";
+
+const sevColor = (s: string) => ({ critical: "var(--danger)", high: "var(--danger)", medium: "var(--warn)", low: "var(--comm)", none: "var(--ink-3)" }[String(s).toLowerCase()] || "var(--ink-3)");
 
 // ── Shared presentational atoms (one design language) ──────────────────────
 
@@ -122,7 +126,8 @@ const panel = { display: "flex", flexDirection: "column" as const, gap: 18 };
 // ── Entity detail renderers (used by Search + Explorer) ─────────────────────
 
 export function AuditorDetail({ a }: { a: Auditor }) {
-  const track = AUDITS.filter((x) => x.auditor === a.id);
+  const { state } = useMars();
+  const track = state.audits.filter((x) => x.auditor === a.id);
   const sc = a.status === "auditing" ? "var(--warn)" : a.status === "active" ? "var(--safe)" : "var(--ink-3)";
   return (
     <div style={panel}>
@@ -228,7 +233,60 @@ export function SkillDetail({ s }: { s: Skill }) {
   );
 }
 
+interface AttRec {
+  reportData?: string;
+  quote?: string;
+  mocked?: boolean;
+  verify?: string;
+  info?: { app_id?: string } | null;
+}
+
+function AttestationView({ id }: { id: string }) {
+  const [att, setAtt] = useState<AttRec | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/attest?id=${encodeURIComponent(id)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (alive) {
+          setAtt(d);
+          setLoading(false);
+        }
+      })
+      .catch(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [id]);
+
+  if (loading) return <div style={{ fontSize: 11, color: "var(--ink-3)" }}>loading attestation…</div>;
+  if (!att || !att.reportData) return <div style={{ fontSize: 11, color: "var(--ink-3)" }}>No attestation recorded yet.</div>;
+  const ok = !att.mocked;
+  return (
+    <div style={{ border: "1px solid var(--hair)", borderRadius: 8, padding: 14, display: "flex", flexDirection: "column", gap: 9 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".06em", color: ok ? "var(--safe)" : "var(--warn)", border: `1px solid ${ok ? "var(--safe)" : "var(--warn)"}`, borderRadius: 6, padding: "2px 8px" }}>{ok ? "TEE-ATTESTED ✓" : "MOCK"}</span>
+        <span style={{ fontSize: 10.5, color: "var(--ink-3)" }}>Phala TDX</span>
+      </div>
+      <Row label="reportData" value={"0x" + (att.reportData || "").slice(0, 26) + "…"} />
+      {att.info?.app_id && <Row label="enclave app id" value={att.info.app_id} />}
+      <button onClick={() => setShow((s) => !s)} style={{ alignSelf: "flex-start", fontSize: 10.5, color: "var(--ink-2)", background: "none", border: "1px solid var(--hair)", borderRadius: 6, padding: "3px 9px", cursor: "pointer" }}>
+        {show ? "hide quote" : "show TDX quote"}
+      </button>
+      {show && (
+        <pre style={{ margin: 0, maxHeight: 170, overflow: "auto", fontFamily: "var(--code)", fontSize: 10.5, lineHeight: 1.5, color: "var(--ink-2)", background: "var(--inset)", borderRadius: 6, padding: 10, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{att.quote}</pre>
+      )}
+      <a href={att.verify || "https://proof.t16z.com/"} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10.5, color: "var(--mars)", textDecoration: "none" }}>
+        Verify this quote ↗
+      </a>
+    </div>
+  );
+}
+
 export function AuditDetail({ a }: { a: Audit }) {
+  const hasOutput = !!(a.summary || a.findings?.length || a.recommendation || a.capabilities?.length);
   return (
     <div style={panel}>
       <div>
@@ -242,14 +300,48 @@ export function AuditDetail({ a }: { a: Audit }) {
         </div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-        <Row label="Escrow (Arc x402)" value={a.escrow} />
-        <Row label="Auditor bond" value={a.bond} />
         <Row label="HCS audit-trail topic" value={a.topic} />
         <Row label="Recorded" value={a.date} />
       </div>
       <div>
         <SectionTitle>Audit trail · pipeline</SectionTitle>
         <AuditTrail audit={a} />
+      </div>
+
+      {hasOutput && (
+        <div>
+          <SectionTitle right={a.risk ? <span style={{ fontSize: 10, color: "var(--ink-3)" }}>risk {a.risk}</span> : undefined}>Verdict · final output</SectionTitle>
+          {a.summary && <div style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55 }}>{a.summary}</div>}
+          {!!a.capabilities?.length && (
+            <div style={{ marginTop: 10 }}>
+              <Eyebrow>Capabilities (observed)</Eyebrow>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 6 }}>
+                {a.capabilities.map((c, i) => (
+                  <div key={i} style={{ fontSize: 11.5, color: "var(--ink-2)" }}>• {c}</div>
+                ))}
+              </div>
+            </div>
+          )}
+          {!!a.findings?.length && (
+            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+              {a.findings.map((f, i) => (
+                <div key={i} style={{ border: "1px solid var(--hair-soft)", borderRadius: 8, padding: "8px 10px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 9, fontWeight: 600, color: sevColor(f.severity), letterSpacing: ".04em" }}>[{String(f.severity).toUpperCase()}]</span>
+                    <span style={{ fontSize: 12, color: "var(--ink)" }}>{f.title}</span>
+                  </div>
+                  {f.detail && <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 3 }}>{f.detail}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+          {a.recommendation && <div style={{ marginTop: 10, fontSize: 11.5, color: "var(--ink-2)" }}><span style={{ fontWeight: 600 }}>Recommendation: </span>{a.recommendation}</div>}
+        </div>
+      )}
+
+      <div>
+        <SectionTitle>TEE attestation</SectionTitle>
+        <AttestationView id={a.id} />
       </div>
     </div>
   );
