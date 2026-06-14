@@ -1045,6 +1045,7 @@ export function computeRegistry(messages: MirrorMessage[]): RegistryView {
         if (m.auditor) j.auditor = m.auditor;
         if (m.verdict) j.verdict = m.verdict;
         if (m.trust_score != null) j.trust_score = m.trust_score;
+        if (m.note) j.note = m.note;
       }
     } else if (m.op === "human_verified") {
       humans[m.nullifier as string] = {
@@ -1056,7 +1057,10 @@ export function computeRegistry(messages: MirrorMessage[]): RegistryView {
       };
     }
   }
-  return { agents: Object.values(agents), jobs: Object.values(jobs), humans: Object.values(humans) };
+  // a skill is VERIFIED only once the requester approves a SAFE audit (status flips to "verified");
+  // any later append that sets a different status (e.g. "revoked"/"rejected") un-verifies it on replay.
+  const jobList = Object.values(jobs).map((j) => ({ ...j, verified: j.status === "verified" }));
+  return { agents: Object.values(agents), jobs: jobList, humans: Object.values(humans) };
 }
 
 // ════════════════════════════════════════════════════════════════════════════

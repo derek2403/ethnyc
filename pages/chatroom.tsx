@@ -366,10 +366,10 @@ export default function ChatRoom() {
                 )}
                 {decision === "running" && <div className="mt-3 flex items-center gap-2 text-xs text-amber-600 dark:text-amber-500"><Spinner /> recording decision → review → mint on HCS…</div>}
                 {(decision === "approved" || decision === "disapproved") && final && (
-                  <div className="mt-3 border-t border-zinc-200 text-sm dark:border-zinc-800">
-                    <p className={`pt-2 font-semibold ${decision === "approved" ? "text-green-600 dark:text-green-500" : "text-red-600 dark:text-red-500"}`}>
-                      {decision === "approved" ? "Approved ✓ — skill verified" : "Disapproved — skill blocked"}
-                    </p>
+                  <div className="mt-3 border-t border-zinc-200 pt-3 text-sm dark:border-zinc-800">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider ${decision === "approved" ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"}`}>
+                      {decision === "approved" ? "✓ Verified" : "⛔ Not verified — blocked"}
+                    </span>
                     <MetaRow label="Auditor reviewed" value={`${"★".repeat(final.rating)} (${final.rating}/5)`} />
                     <MetaRow label="Auditor reputation" value={<a className="text-blue-600 hover:underline dark:text-blue-400" target="_blank" rel="noreferrer" href={hs("topic", AUDITOR_VOTING_TOPIC)}>+{final.rating} good ↗</a>} />
                     {final.mint ? (

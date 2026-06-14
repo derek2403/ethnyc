@@ -144,12 +144,13 @@ export async function auditTaskToHcs(client: Client, opts: AuditTaskOpts): Promi
     buildAuditVerdictFull(skillName, { verdict, risk, summary, capabilities, recommendation, trustScore, model: modelUsed, reportHrl: file.hrl, attestation })
   );
 
-  // ── index into the main registry so the dashboard can list all verified skills ──
+  // ── index into the main registry. The audit only marks the job "audited" (+ the verdict); a skill
+  //    becomes "verified" ONLY when the requester approves (finalizeTaskToHcs), never from the audit alone. ──
   if (registryTopicId) {
     await submitMessage(
       client,
       registryTopicId,
-      buildJobUpdated({ jobId: taskTopicId, status: verdict === "SAFE" ? "verified" : "dangerous", verdict, trustScore, note: summary.slice(0, 120) })
+      buildJobUpdated({ jobId: taskTopicId, status: "audited", verdict, trustScore, note: summary.slice(0, 120) })
     );
   }
 
