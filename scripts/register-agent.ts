@@ -11,6 +11,7 @@ import { getClient, hashscan, createAgentAccount } from "../lib/hedera";
 import { initMars, registerAgent } from "../lib/agents";
 import { checkAgentHuman } from "../lib/world-agentkit";
 import { getAgentBookVerifyLink, pollAgentBook } from "../lib/agentbook";
+import { saveAgent } from "../lib/db.mjs";
 
 /** Register the agent's EVM address in World AgentBook, showing the verify link as a QR in the terminal. */
 async function registerInAgentBook(evmAddress: string): Promise<{ worldVerified: boolean; humanId: string | null }> {
@@ -77,6 +78,24 @@ async function main() {
         if (s.status === "done") console.log(`  ✓ ${s.label}${s.id ? ` → ${s.id}` : ""}`);
       }
     );
+
+    // persist to the dashboard's store (db/users.json | db/auditors.json)
+    saveAgent(role, {
+      agent_id: a.account,
+      evm_address: a.evmAddress ?? null,
+      role,
+      world_verified: a.worldVerified,
+      human_id: a.humanId ?? null,
+      profile_topic: a.profileTopicId,
+      voting_topic: a.votingTopicId,
+      review_topic: a.reviewTopicId,
+      account_memo: a.accountMemo,
+      registry_seq: a.registrySeq ?? null,
+      encrypted_key: a.encryptedKey ?? null,
+      rating: "5.0",
+      hedera: true,
+      registered_at: new Date().toISOString(),
+    });
 
     console.log("\n✓ registered");
     console.log(`  account  ${hashscan("account", a.account)}`);
