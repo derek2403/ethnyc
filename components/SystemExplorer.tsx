@@ -22,6 +22,9 @@ interface Auditor {
   region: string;
   spec: string;
   last: string;
+  worldId?: string;
+  worldVerified?: boolean;
+  registeredAt?: string | null;
   x: number;
   y: number;
 }
@@ -35,6 +38,9 @@ interface User {
   sessions: number;
   last: string;
   active: boolean;
+  worldId?: string;
+  worldVerified?: boolean;
+  registeredAt?: string | null;
   x: number;
   y: number;
 }
@@ -72,13 +78,16 @@ interface Selection {
   kind: string;
   title: string;
   accent: string;
-  verifyLabel: string;
+  verified: boolean;
   status: string;
   statusColor: string;
   tiles: Tile[];
   bars: Bar[];
   rows: Row[];
 }
+
+const joined = (e: { registeredAt?: string | null; since?: string; last?: string }) =>
+  (e.registeredAt || e.since || e.last || "").slice(0, 10) || "—";
 interface TrailRow {
   id: string;
   time: string;
@@ -185,23 +194,20 @@ export default function SystemExplorer() {
         kind: "Auditor agent",
         title: a.id,
         accent: "var(--comm)",
-        verifyLabel: "World ID",
+        verified: !!a.worldVerified,
         status: a.status,
         statusColor: sc,
+        // proposed = audits this auditor ran; rating = avg from requester reviews
         tiles: [
-          { value: a.proposed, label: "proposed" },
-          { value: a.processed, label: "processed" },
-          { value: a.accuracy + "%", label: "accuracy" },
+          { value: a.proposed, label: "audits" },
+          { value: a.rating.toFixed(1), label: "rating" },
+          { value: a.rep.toFixed(2), label: "reputation" },
         ],
-        bars: [
-          { label: "reputation", value: a.rep.toFixed(2), pct: pct(a.rep), color: "var(--comm)" },
-          { label: "rating", value: a.rating.toFixed(1) + " / 5", pct: pct(a.rating / 5), color: "var(--safe)" },
-        ],
+        bars: [{ label: "rating", value: a.rating.toFixed(1) + " / 5", pct: pct(a.rating / 5), color: "var(--safe)" }],
         rows: [
-          { label: "Stake bonded", value: a.stake.toLocaleString() + " USDC" },
-          { label: "Specialty", value: a.spec },
-          { label: "Region", value: a.region },
-          { label: "Last active", value: a.last },
+          { label: "Date joined", value: joined(a) },
+          { label: "World ID", value: a.worldVerified ? "verified" : "not verified" },
+          { label: "Status", value: a.status },
         ],
       };
     }
@@ -211,23 +217,20 @@ export default function SystemExplorer() {
       kind: "User agent",
       title: u.id,
       accent: "var(--warn)",
-      verifyLabel: "World ID",
+      verified: !!u.worldVerified,
       status: u.active ? "licensing now" : "idle",
       statusColor: u.active ? "var(--safe)" : "var(--ink-3)",
+      // skills = verified skills licensed; sessions = audits this agent requested
       tiles: [
         { value: u.skills, label: "licensed" },
-        { value: "$" + u.spend.toLocaleString(), label: "spend" },
-        { value: u.sessions, label: "sessions" },
+        { value: u.sessions, label: "audits" },
+        { value: u.rating.toFixed(1), label: "rating" },
       ],
-      bars: [
-        { label: "rating given", value: u.rating.toFixed(1) + " / 5", pct: pct(u.rating / 5), color: "var(--warn)" },
-        { label: "trust score", value: pct(0.6 + u.rating / 12), pct: pct(0.6 + u.rating / 12), color: "var(--comm)" },
-      ],
+      bars: [{ label: "rating given", value: u.rating.toFixed(1) + " / 5", pct: pct(u.rating / 5), color: "var(--warn)" }],
       rows: [
-        { label: "Member since", value: u.since },
-        { label: "Last licensed", value: u.last },
-        { label: "Avg / skill", value: "$" + Math.round(u.spend / u.skills).toLocaleString() },
-        { label: "Verified payer", value: "yes" },
+        { label: "Date joined", value: joined(u) },
+        { label: "World ID", value: u.worldVerified ? "verified" : "not verified" },
+        { label: "Last audit", value: u.last },
       ],
     };
   };
@@ -501,8 +504,8 @@ export default function SystemExplorer() {
             </button>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 11 }}>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: "var(--safe)", border: "1px solid rgba(70,177,127,0.4)", padding: "3px 7px", whiteSpace: "nowrap", borderRadius: 6 }}>
-              ✓ {sel.verifyLabel}
+            <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: sel.verified ? "var(--safe)" : "var(--ink-3)", border: `1px solid ${sel.verified ? "rgba(70,177,127,0.4)" : "var(--hair)"}`, padding: "3px 7px", whiteSpace: "nowrap", borderRadius: 6 }}>
+              {sel.verified ? "✓ World ID" : "World ID · unverified"}
             </span>
             <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, color: sel.statusColor, border: "1px solid var(--hair)", padding: "3px 7px", whiteSpace: "nowrap", borderRadius: 6 }}>
               {sel.status}

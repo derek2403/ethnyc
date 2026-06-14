@@ -16,7 +16,7 @@ type Result = {
   humanId?: string | null;
 };
 
-export default function AgentRegister({ role }: { role: "user" | "auditor" }) {
+export default function AgentRegister({ role, onRegistered }: { role: "user" | "auditor"; onRegistered?: (agentId: string) => void }) {
   const [steps, setSteps] = useState<Step[]>([]);
   const [scan, setScan] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
@@ -62,6 +62,7 @@ export default function AgentRegister({ role }: { role: "user" | "auditor" }) {
             else if (evt.type === "done") {
               setResult(evt.result);
               setScan(null);
+              if (evt.result?.account) onRegistered?.(evt.result.account);
             } else if (evt.type === "error") setErr(evt.error);
           }
         }

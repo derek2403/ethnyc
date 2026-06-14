@@ -40,12 +40,12 @@ import {
   getClient, getOperatorKey, getOperatorId, hashscan,
   createTopic, submitMessage,
   hcs16Memo, buildHCS16FloraCreated, buildHCS16Chat,
-  buildTaskInit, buildAuditStep, buildAuditVerdict, buildJobPosted,
+  buildTaskInit, buildAuditStage, buildAuditVerdictFull, buildJobPosted,
   uploadFileHCS1,
 } from "./hedera";
 import { loadState, saveState } from "./state";
 import { initMars } from "./agents";
-import { REQUESTER, AUDITOR, AUDITOR_REVIEW_TOPIC, AUDITOR_VOTING_TOPIC, requesterAsk, requesterAccept, type DemoSkill } from "./demo-skills";
+import { REQUESTER, AUDITOR, AUDITOR_REVIEW_TOPIC, AUDITOR_VOTING_TOPIC, requesterAsk, requesterAccept, SKILL_DESCRIPTIONS, type DemoSkill } from "./demo-skills";
 import { generateAuditorQuote, generateReviewComment } from "./auditor";
 import { resolveRemoteSkill, resolveLocalDemoSkill, readLocalSkill } from "./skill-source.mjs";
 import { runAuditPipeline, DEFAULT_MODEL } from "./audit-core.mjs";
@@ -161,9 +161,13 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
     const source = files.map((f) => `=== ${f.name} ===\n${f.content}`).join("\n").slice(0, 8000);
     const contentHash = createHash("sha256").update(source).digest("hex");
     const terms = {
-      skill: name, scope: desc.scope, requester, auditor: AUDITOR,
+      // WHO/WHAT manifest: payer (added by buildTaskInit) + auditor + skill + declared description
+      // + the files submitted + scope + agreed terms + the auditor's quote line.
+      skill: name, description: SKILL_DESCRIPTIONS[opts.skillRef], files: files.map((f) => f.name),
+      scope: desc.scope, requester, auditor: AUDITOR,
       price: desc.price, bond: desc.bond, time: desc.time, version: desc.version,
       tier: desc.tier, compliance: desc.compliance, contentHash, chatRoomTopicId,
+      m: quote.text,
     };
     let content = source;
     let contentHrl: string | undefined;
@@ -232,13 +236,24 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
     // The pipeline already ran; here we write the evidence to HCS in order so the task topic is
     // a complete, replayable record. A stage with a high/critical finding is marked "fail".
     w(`\n  ${C.dim}posting audit trail → task topic${C.reset}`);
-    for (const ev of result.record.evidence as { stage: string; summary?: string; findings?: { severity: string }[] }[]) {
-      const status = ev.findings?.some((f) => ["high", "critical"].includes(String(f.severity).toLowerCase())) ? "fail" : "pass";
-      const r = await submitMessage(client, taskTopicId, buildAuditStep(name, cap(ev.stage), status, ev.summary || ""));
+    for (const ev of result.record.evidence as { stage: string; summary?: string; findings?: { severity: string; title: string; detail?: string }[] }[]) {
+      const findings = ev.findings ?? [];
+      const status = findings.some((f) => ["high", "critical"].includes(String(f.severity).toLowerCase())) ? "fail" : "pass";
+      // RICH stage record: summary + each finding (severity/title/detail) + a severity histogram + the model
+      const r = await submitMessage(client, taskTopicId, buildAuditStage(name, cap(ev.stage), ev.summary || "", findings, model));
       const mark = status === "fail" ? `${C.red}✗${C.reset}` : `${C.green}✓${C.reset}`;
       w(`  ${mark} ${C.bold}${cap(ev.stage).padEnd(12)}${C.reset} ${C.dim}seq ${r.sequenceNumber}${C.reset}  ${ev.summary || ""}`);
     }
-    const vSeq = (await submitMessage(client, taskTopicId, buildAuditVerdict(name, verdict.verdict, trust, contentHrl ?? "hcs://1/pending"))).sequenceNumber;
+    // the FULL untruncated report (all evidence + the synthesizer verdict + the TDX attestation) → HCS-1,
+    // content-addressed; the on-chain verdict references it by HRL.
+    const reportFile = await uploadFileHCS1(client, JSON.stringify({ ...result.record, verdict, attestation: result.attestation ?? null }), "application/json");
+    const attHex = result.attestation?.reportData && !result.attestation?.error ? `0x${String(result.attestation.reportData).replace(/^0x/, "").slice(0, 48)}` : undefined;
+    // RICH verdict: capabilities ("what it actually does") + risk + recommendation + model + the HCS-1 report (+ attestation)
+    const vSeq = (await submitMessage(client, taskTopicId, buildAuditVerdictFull(name, {
+      verdict: verdict.verdict, risk: verdict.risk, summary: verdict.summary,
+      capabilities: verdict.capabilities, recommendation: verdict.recommendation,
+      trustScore: trust, model, reportHrl: reportFile.hrl, attestation: attHex,
+    }))).sequenceNumber;
 
     // ════════════════════════════════════════════════════════════════════════
     // STEP 3 — ADD TO DB + /skills + WHITELIST the agent_id

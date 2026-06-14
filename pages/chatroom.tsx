@@ -288,7 +288,11 @@ export default function ChatRoom() {
                 let dot: any = "init"; let title = ""; let detail = ""; let sub = "";
                 const findings: any[] = Array.isArray(m.findings) ? m.findings : [];
                 const caps: string[] = Array.isArray(m.capabilities) ? m.capabilities : [];
-                if (m.op === "init") { dot = "init"; title = "Task opened · terms locked on HCS"; detail = `${m.price} escrow · bond ${m.bond} · scope ${m.scope} · ETA ${m.time}`; sub = m.m ? `quote: ${m.m}` : ""; }
+                if (m.op === "init") {
+                  dot = "init"; title = "Task opened · terms locked on HCS";
+                  detail = m.description ? `“${m.description}”` : `${m.scope}`;
+                  sub = `payer ${m.payer ?? m.requester} · auditor ${m.auditor} · ${m.price} escrow · bond ${m.bond} · scope ${m.scope}${Array.isArray(m.files) && m.files.length ? ` · files: ${m.files.join(", ")}` : ""}`;
+                }
                 else if (m.op === "stage") { dot = m.status === "fail" ? "fail" : m.status === "warn" ? "info" : "pass"; title = m.stage; detail = m.summary ?? ""; sub = `${m.finding_count ?? findings.length} finding(s)${m.model ? ` · ${m.model}` : ""}`; }
                 else if (m.op === "step") { dot = m.status; title = m.step; detail = m.detail ?? ""; } // legacy
                 else if (m.op === "verdict") { dot = m.verdict === "SAFE" ? "verdict-safe" : "verdict-danger"; title = `Verdict: ${m.verdict}`; detail = m.summary ?? `trust ${m.trustScore ?? "—"}`; sub = `risk ${m.risk ?? "—"} · trust ${m.trustScore ?? "—"}${m.model ? ` · ${m.model}` : ""}`; }
@@ -368,7 +372,7 @@ export default function ChatRoom() {
                 {(decision === "approved" || decision === "disapproved") && final && (
                   <div className="mt-3 border-t border-zinc-200 pt-3 text-sm dark:border-zinc-800">
                     <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider ${decision === "approved" ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"}`}>
-                      {decision === "approved" ? "✓ Verified" : "⛔ Not verified — blocked"}
+                      {decision === "approved" ? "✓ Safe & Verified" : "⛔ Not verified — blocked"}
                     </span>
                     <MetaRow label="Auditor reviewed" value={`${"★".repeat(final.rating)} (${final.rating}/5)`} />
                     <MetaRow label="Auditor reputation" value={<a className="text-blue-600 hover:underline dark:text-blue-400" target="_blank" rel="noreferrer" href={hs("topic", AUDITOR_VOTING_TOPIC)}>+{final.rating} good ↗</a>} />

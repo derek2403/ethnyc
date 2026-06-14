@@ -2,25 +2,23 @@ import { useState } from "react";
 import Popout, { ExpandButton } from "./Popout";
 import SearchExpanded from "./SearchExpanded";
 
-// ── Cell F · Cross-chain Search ──────────────────────────────────────────
-// Standalone: a Blockscout-style search box. Chips are equal search hints
-// that focus the input; the input rewrites the "go" link's href on submit.
-// Expand → a MARS block explorer that resolves any platform id.
+// ── Cell F · MARS Explorer search ────────────────────────────────────────
+// Standalone search box for the MARS registry. The chips are the REAL platform
+// categories you can resolve (skill / audit / auditor / user / EVM / HCS topic /
+// file hash). Submitting or clicking a chip opens the expanded MARS block explorer
+// (SearchExpanded) pre-filled with the query — which resolves it via /api/explorer.
 
-const CHIP_LABELS = ["Address", "Domain", "Smart contract", "Transaction", "Token", "DApp", "NFT", "Block"];
+const CHIP_LABELS = ["Skill", "Audit id", "Auditor", "User / agent", "EVM address", "World ID", "HCS topic", "File hash"];
 
 export default function CrossChainSearch() {
   const [open, setOpen] = useState(false);
-  const onSearchInput: React.FormEventHandler<HTMLInputElement> = (e) => {
-    const v = (e.currentTarget.value || "").trim();
-    const a = document.getElementById("bs-go") as HTMLAnchorElement | null;
-    if (a) a.href = v ? "https://eth.blockscout.com/search-results?q=" + encodeURIComponent(v) : "https://www.blockscout.com/";
-  };
-  const onSearchKey: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
-    if (e.key === "Enter") {
-      const a = document.getElementById("bs-go") as HTMLAnchorElement | null;
-      if (a) a.click();
-    }
+  const [query, setQuery] = useState("");
+  const [initial, setInitial] = useState("");
+
+  // open the expanded explorer pre-filled with `q` (chip label or typed text)
+  const explore = (q: string) => {
+    setInitial(q);
+    setOpen(true);
   };
 
   return (
@@ -66,30 +64,29 @@ export default function CrossChainSearch() {
             <input
               id="bs-search"
               type="text"
-              placeholder="Search by address / transaction / token / block …"
-              onInput={onSearchInput}
-              onKeyDown={onSearchKey}
+              placeholder="Search a skill, audit, auditor, user, EVM, topic, hash …"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && query.trim() && explore(query.trim())}
               style={{ flex: 1, minWidth: 0, background: "none", border: "none", outline: "none", color: "var(--ink)", fontFamily: "var(--sans)", fontSize: 14 }}
             />
-            <a
-              id="bs-go"
-              href="https://www.blockscout.com/"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "center", width: 34, height: 34, background: "var(--mars)", borderRadius: 8, textDecoration: "none" }}
+            <button
+              onClick={() => explore(query.trim())}
+              aria-label="search"
+              style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "center", width: 34, height: 34, background: "var(--mars)", borderRadius: 8, border: "none", cursor: "pointer" }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" style={{ fill: "none", stroke: "#fff", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" }}>
                 <line x1="5" y1="12" x2="18" y2="12" />
                 <polyline points="12,6 19,12 12,18" />
               </svg>
-            </a>
+            </button>
           </div>
           <div style={{ marginTop: 14, display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "center", gap: 7 }}>
             <span style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--ink-3)", marginRight: 2 }}>Try searching by</span>
             {CHIP_LABELS.map((label) => (
               <button
                 key={label}
-                onClick={() => document.getElementById("bs-search")?.focus()}
+                onClick={() => setOpen(true)}
                 style={{
                   fontSize: 11.5,
                   cursor: "pointer",
@@ -109,7 +106,7 @@ export default function CrossChainSearch() {
     </div>
       {open && (
         <Popout title="Explorer" meta="MARS block explorer · resolve any id" onClose={() => setOpen(false)}>
-          <SearchExpanded />
+          <SearchExpanded initialQuery={initial} />
         </Popout>
       )}
     </>
