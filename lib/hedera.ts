@@ -1071,6 +1071,59 @@ export function buildAuditVerdict(skillId: string, verdict: "SAFE" | "DANGEROUS"
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// MARS TASK — the per-task topic's INIT message. The task topic is created when a
+// requesting agent accepts an auditor's quote ("create task"); replaying it gives
+// the full ordered log: init (terms + skill content) → mars-audit steps → verdict.
+// The agreed terms (price/scope/bond/time) are the OUTCOME of the simulated nego
+// that happened live in the HCS-16 chat room. Skill content rides inline when it
+// fits the 1KB HCS message; otherwise the caller stores it on HCS-1 and passes an
+// `hcs://1/<id>` HRL as `content`.
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface TaskInit {
+  skill: string; // skill name (e.g. "price-checker")
+  content: string; // the skill source, OR an hcs://1/<id> HRL when too large
+  scope: string; // what to check (e.g. "network · keys · wallet")
+  requester: string; // the agent that posted the ask
+  auditor: string; // the agent that won the quote
+  price: string; // accepted quote (audit fee → escrow)
+  bond: string; // auditor's honesty bond
+  time: string; // agreed turnaround (e.g. "~10m")
+  version?: string;
+  tier?: string; // T1 / T2 / automated / SOC2 …
+  compliance?: string;
+  contentHrl?: string; // set when content was offloaded to HCS-1
+  contentHash?: string; // sha256 of the original skill source
+  chatRoomTopicId?: string; // back-link to the room the nego happened in
+  m?: string;
+}
+
+/** Build the `mars-task` init message — "all the required stuff as the data field". */
+export function buildTaskInit(t: TaskInit): string {
+  return JSON.stringify({
+    p: "mars-task",
+    op: "init",
+    skill: t.skill,
+    ...(t.version && { version: t.version }),
+    content: t.content,
+    ...(t.contentHrl && { content_hrl: t.contentHrl }),
+    ...(t.contentHash && { content_hash: t.contentHash }),
+    scope: t.scope,
+    ...(t.tier && { tier: t.tier }),
+    ...(t.compliance && { compliance: t.compliance }),
+    requester: t.requester,
+    auditor: t.auditor,
+    price: t.price,
+    bond: t.bond,
+    time: t.time,
+    ...(t.chatRoomTopicId && { chat_room_topic_id: t.chatRoomTopicId }),
+    status: "agreed",
+    ...(t.m && { m: t.m }),
+    timestamp: new Date().toISOString(),
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // SCHEDULED TX — re-audit on update
 // NOTE: SDK scheduled txns execute when signatures are collected, NOT on a wall
 // clock. For true time-based recurring re-audits use the HSS contract approach from
