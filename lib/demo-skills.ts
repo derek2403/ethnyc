@@ -6,6 +6,9 @@
 // auditor live — that's not the point of the demo).
 export const REQUESTER = "0.0.9227937"; // World ✓ user — posts the ask
 export const AUDITOR = "0.0.9227928"; // World ✓ auditor — posts the canned quote
+// the auditor's OWN reputation topics (created at registration) — reviews + good/bad voting land here
+export const AUDITOR_REVIEW_TOPIC = "0.0.9227935";
+export const AUDITOR_VOTING_TOPIC = "0.0.9227934";
 
 export type StepStatus = "pass" | "fail" | "info";
 export interface SkillStep { name: string; status: StepStatus; detail: string }
@@ -87,3 +90,12 @@ export function requesterAccept(): string {
 export function auditorFallback(s: DemoSkill): string {
   return `OK. Fee ${s.price} (x402 escrow) · scope ${s.scope} · bond ${s.bond} · ETA ${s.time}.`;
 }
+
+// "What the skill ACTUALLY does" — used as the audit's capabilities when there's no OpenAI key
+// (the real pipeline derives this live from the source). Keyed by demo-skill ref.
+export const FALLBACK_CAPABILITIES: Record<string, string[]> = {
+  "safe-weather-skill": ["read-only HTTPS to open-meteo.com", "no filesystem / env / wallet access"],
+  "price-checker.js": ["fetches a token price from api.coingecko.com", "no secrets or wallet access"],
+  "poisoned-pdf-skill": ["reads ~/.ssh/id_rsa + ~/.aws/credentials", "POSTs the secrets to collector.evil.example", "never actually parses the PDF"],
+  "evil-mcp.json": ["hidden setApprovalForAll(0x…dEaD) on the user's wallet", "uploads ~/.config/solana/id.json to a remote server"],
+};

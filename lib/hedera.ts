@@ -1070,6 +1070,94 @@ export function buildAuditVerdict(skillId: string, verdict: "SAFE" | "DANGEROUS"
   return JSON.stringify({ p: "mars-audit", op: "verdict", skill: skillId, verdict, trustScore, report: reportHrl, ...(attestation && { attestation }), timestamp: new Date().toISOString() });
 }
 
+// --- Real-pipeline audit records (derek's runAuditPipeline → HCS). Each message is kept
+//     well under the 1KB HCS limit; the FULL untruncated report is stored on HCS-1. ---
+export interface AuditFinding { severity: string; title: string; detail?: string }
+
+const SEV_RANK: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
+
+/** Try increasingly compact variants, return the first JSON ≤1000 bytes (HCS single-message limit). */
+function fitMessage(variants: Array<Record<string, unknown>>): string {
+  for (const v of variants) {
+    const s = JSON.stringify(v);
+    if (Buffer.byteLength(s, "utf-8") <= 1000) return s;
+  }
+  return JSON.stringify(variants[variants.length - 1]);
+}
+
+/** One real audit STAGE (scanner/sandbox/fork) → a rich HCS message: summary, severity histogram,
+ *  total finding count, model, and the findings (with details when they fit). Status from worst finding. */
+export function buildAuditStage(skillId: string, stage: string, summary: string, findings: AuditFinding[] = [], model?: string): string {
+  const sev = (f: AuditFinding) => String(f.severity).toLowerCase();
+  const worst = findings.reduce((m, f) => Math.max(m, SEV_RANK[sev(f)] ?? 0), 0);
+  const status = worst >= 3 ? "fail" : worst === 2 ? "warn" : "pass";
+  const severities: Record<string, number> = {};
+  for (const f of findings) severities[sev(f)] = (severities[sev(f)] ?? 0) + 1;
+  const variant = (n: number, detail: boolean, sumLen: number) => ({
+    p: "mars-audit", op: "stage", skill: skillId, stage, status,
+    summary: String(summary || "").slice(0, sumLen),
+    finding_count: findings.length,
+    severities,
+    ...(model && { model }),
+    findings: findings.slice(0, n).map((f) => ({
+      severity: sev(f),
+      title: String(f.title).slice(0, 80),
+      ...(detail && f.detail ? { detail: String(f.detail).slice(0, 130) } : {}),
+    })),
+    timestamp: new Date().toISOString(),
+  });
+  return fitMessage([variant(6, true, 240), variant(5, true, 180), variant(6, false, 160), variant(4, false, 120), variant(3, false, 90)]);
+}
+
+export interface FullVerdict {
+  verdict: "SAFE" | "DANGEROUS";
+  risk?: string;
+  summary?: string;
+  capabilities?: string[]; // "what the skill ACTUALLY does"
+  recommendation?: string;
+  trustScore?: number;
+  model?: string;
+  reportHrl?: string; // hcs://1/<id> — the full audit report
+  attestation?: string;
+}
+/** The final verdict → HCS. Carries `capabilities` + risk + recommendation + model so the task topic is
+ *  a complete, replayable record (the dashboard's "verified skills" read this). Capped to ≤1KB. */
+export function buildAuditVerdictFull(skillId: string, v: FullVerdict): string {
+  const variant = (sumLen: number, capN: number, capLen: number, recLen: number) => ({
+    p: "mars-audit", op: "verdict", skill: skillId,
+    verdict: v.verdict,
+    ...(v.risk && { risk: v.risk }),
+    ...(v.trustScore != null && { trustScore: v.trustScore }),
+    ...(v.model && { model: v.model }),
+    ...(v.summary && { summary: String(v.summary).slice(0, sumLen) }),
+    ...(v.capabilities?.length && { capabilities: v.capabilities.slice(0, capN).map((c) => String(c).slice(0, capLen)) }),
+    ...(v.recommendation && { recommendation: String(v.recommendation).slice(0, recLen) }),
+    ...(v.reportHrl && { report: v.reportHrl }),
+    ...(v.attestation && { attestation: v.attestation }),
+    timestamp: new Date().toISOString(),
+  });
+  return fitMessage([variant(340, 8, 84, 170), variant(260, 6, 72, 130), variant(200, 5, 64, 100), variant(140, 4, 56, 80)]);
+}
+
+/** Map an audit risk band → a 0-100 trust score (for the dashboard / HCS-25-style display). */
+export function riskToTrust(risk?: string): number {
+  return ({ none: 96, low: 82, medium: 50, high: 18, critical: 6 } as Record<string, number>)[String(risk).toLowerCase()] ?? 50;
+}
+
+// ── Post-audit lifecycle on the task topic: requester decision → auditor review → HTS mint ──
+/** Requester approves / disapproves the verdict. */
+export function buildTaskDecision(skillId: string, actor: string, decision: "approved" | "disapproved", verdict?: string, note?: string): string {
+  return JSON.stringify({ p: "mars-task", op: "decision", skill: skillId, actor, decision, ...(verdict && { verdict }), ...(note && { note: String(note).slice(0, 160) }), timestamp: new Date().toISOString() });
+}
+/** Requester rates + reviews the auditor (also written to the auditor's own review + voting HCS). */
+export function buildTaskReviewed(skillId: string, auditor: string, rating: number, comment?: string, reviewTopicId?: string, votingTopicId?: string): string {
+  return JSON.stringify({ p: "mars-task", op: "reviewed", skill: skillId, auditor, rating: Math.max(1, Math.min(5, Math.round(rating))), ...(comment && { comment: String(comment).slice(0, 160) }), ...(reviewTopicId && { review_topic_id: reviewTopicId }), ...(votingTopicId && { voting_topic_id: votingTopicId }), timestamp: new Date().toISOString() });
+}
+/** A VERIFIED HTS NFT was minted for the (approved) skill. */
+export function buildTaskMinted(skillId: string, tokenId: string, serial: string, owner: string, metadata?: string): string {
+  return JSON.stringify({ p: "mars-task", op: "minted", skill: skillId, token: tokenId, serial, owner, ...(metadata && { metadata }), timestamp: new Date().toISOString() });
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // MARS TASK — the per-task topic's INIT message. The task topic is created when a
 // requesting agent accepts an auditor's quote ("create task"); replaying it gives
