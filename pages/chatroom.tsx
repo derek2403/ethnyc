@@ -188,6 +188,7 @@ export default function ChatRoom() {
           <div className="flex items-center gap-3 text-xs">
             <Link href="/hedera" className={`${mono} text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100`}>/hedera</Link>
             <Link href="/audit" className={`${mono} text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100`}>/audit</Link>
+            <Link href="/publish" className={`${mono} text-fuchsia-600 hover:text-fuchsia-500 dark:text-fuchsia-400`}>/publish</Link>
           </div>
         </div>
         <h1 className={`${mono} mt-2 text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50`}>mars-chatroom</h1>

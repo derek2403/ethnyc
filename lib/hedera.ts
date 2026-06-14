@@ -35,6 +35,9 @@ import {
   NftId,
   TransferTransaction,
   ScheduleCreateTransaction,
+  CustomRoyaltyFee,
+  CustomFixedFee,
+  AccountId,
 } from "@hashgraph/sdk";
 import type { Key } from "@hashgraph/sdk";
 import { createHash } from "crypto";
@@ -229,20 +232,28 @@ export async function createVerifiedCollection(
 export interface LicenseCollectionOptions {
   name?: string;
   symbol?: string;
+  /** Author payout account (0.0.x) — when set, a real author royalty is attached. */
+  royaltyCollectorAccountId?: string;
+  /** Royalty fraction = numerator/denominator of each license SALE value (e.g. 10/100 = 10%). */
+  numerator?: number;
+  denominator?: number;
+  /** Fallback fixed fee (in HBAR) charged when a transfer carries no fungible value. */
+  fallbackHbar?: number;
 }
 
 /** Version-bound LICENSE NFT collection.
- *  NOTE: the author-royalty CustomRoyaltyFee is DEFERRED for now — this mints a
- *  plain license NFT. To add the author's cut later, attach a CustomRoyaltyFee
- *  (+ fee schedule key) at create-time. See README §4 (author royalty). */
+ *  When `royaltyCollectorAccountId` is given, a real Hedera `CustomRoyaltyFee` is
+ *  attached at create-time: every license SALE auto-routes `numerator/denominator`
+ *  of the proceeds to the author (with an HBAR fallback fee for value-less
+ *  transfers), implementing README §4 (author royalty). Omit it for a plain license. */
 export async function createLicenseCollection(
   client: Client,
   opts: LicenseCollectionOptions = {}
-): Promise<NftCollection> {
+): Promise<NftCollection & { royalty?: { collector: string; numerator: number; denominator: number; fallbackHbar: number } }> {
   const operatorKey = getOperatorKey();
   const { name = "MARS License", symbol = "MARSL" } = opts;
 
-  const tx = await new TokenCreateTransaction()
+  const tx = new TokenCreateTransaction()
     .setTokenName(name)
     .setTokenSymbol(symbol)
     .setTokenType(TokenType.NonFungibleUnique)
@@ -252,12 +263,28 @@ export async function createLicenseCollection(
     .setTreasuryAccountId(getOperatorId())
     .setAdminKey(operatorKey.publicKey)
     .setSupplyKey(operatorKey.publicKey)
-    .setMaxTransactionFee(new Hbar(40))
-    .freezeWith(client);
+    .setMaxTransactionFee(new Hbar(50));
+
+  // ── author royalty (the deferred feature) ────────────────────────────────
+  let royalty: { collector: string; numerator: number; denominator: number; fallbackHbar: number } | undefined;
+  if (opts.royaltyCollectorAccountId) {
+    const numerator = Math.max(1, Math.round(opts.numerator ?? 10));
+    const denominator = Math.max(numerator, Math.round(opts.denominator ?? 100));
+    const fallbackHbar = opts.fallbackHbar ?? 1;
+    const fee = new CustomRoyaltyFee()
+      .setNumerator(numerator)
+      .setDenominator(denominator)
+      .setFeeCollectorAccountId(AccountId.fromString(opts.royaltyCollectorAccountId))
+      .setFallbackFee(new CustomFixedFee().setHbarAmount(new Hbar(fallbackHbar)));
+    tx.setCustomFees([fee]).setFeeScheduleKey(operatorKey.publicKey);
+    royalty = { collector: opts.royaltyCollectorAccountId, numerator, denominator, fallbackHbar };
+  }
+
+  const frozen = await tx.freezeWith(client);
   const receipt = await (
-    await (await tx.sign(operatorKey)).execute(client)
+    await (await frozen.sign(operatorKey)).execute(client)
   ).getReceipt(client);
-  return { tokenId: receipt.tokenId!.toString(), name, symbol };
+  return { tokenId: receipt.tokenId!.toString(), name, symbol, ...(royalty && { royalty }) };
 }
 
 /** Mint one NFT serial. `metadata` MUST be ≤100 bytes — use an HRL (hcs://1/<id>) or compact ref. */

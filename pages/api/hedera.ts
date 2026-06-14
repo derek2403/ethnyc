@@ -87,6 +87,8 @@ import { loadDemoSkill } from "@/lib/demo-skills-loader";
 import { getSkill, SKILL_DESCRIPTIONS } from "@/lib/demo-skills";
 import { generateAuditorQuote } from "@/lib/auditor";
 import { auditTaskToHcs, finalizeTaskToHcs } from "@/lib/audit-task";
+import { savePremiumSkill } from "@/lib/db.mjs";
+import { resolveRemoteSkill, resolveLocalDemoSkill } from "@/lib/skill-source.mjs";
 
 export const config = {
   api: { bodyParser: { sizeLimit: "5mb" } }, // audit reports / manifests can be large
@@ -146,7 +148,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(200).json(await createVerifiedCollection(client, body.name, body.symbol));
       }
       case "createLicenseCollection": {
-        return res.status(200).json(await createLicenseCollection(client, { name: body.name, symbol: body.symbol }));
+        // optional author royalty: pass royaltyCollectorAccountId + numerator/denominator
+        return res.status(200).json(await createLicenseCollection(client, {
+          name: body.name, symbol: body.symbol,
+          royaltyCollectorAccountId: body.royaltyCollectorAccountId,
+          numerator: body.numerator, denominator: body.denominator, fallbackHbar: body.fallbackHbar,
+        }));
       }
       case "mintNft": {
         // metadata encodes the skill + version so checkNft can read it back (≤100 bytes)
@@ -341,13 +348,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(200).json(await generateAuditorQuote(skill, body.ask));
       }
 
-      // ── /chatroom: accept the quote → spin the per-task topic + log the job ──
+      // ── resolve a skill REFERENCE (demo name · npm package · github/raw URL) → { name, files } ──
+      // Lets the /publish UI ingest skills the user doesn't paste/upload (their repo / npm).
+      case "resolveSkill": {
+        const ref = String(body.ref ?? body.skillRef ?? "").trim();
+        if (!ref) return res.status(400).json({ error: "ref required" });
+        try {
+          const resolved = resolveLocalDemoSkill(ref) ?? (await resolveRemoteSkill(ref));
+          return res.status(200).json({ name: resolved.name, files: resolved.files });
+        } catch (e) {
+          return res.status(400).json({ error: e instanceof Error ? e.message : "could not resolve skill" });
+        }
+      }
+
+      // ── /chatroom + /publish: accept the quote → spin the per-task topic + log the job ──
       case "createTask": {
-        // skill source is read SERVER-SIDE from demo/skills (file OR Claude-Skill folder) so `init` is authoritative
+        // Author-submitted source (paste/upload/URL) arrives as body.content; otherwise the
+        // skill is a demo ref read SERVER-SIDE from demo/skills so `init` stays authoritative.
         const skillRef: string = body.skillRef ?? body.skillFile ?? "price-checker.js";
-        const loaded = loadDemoSkill(skillRef);
+        const inline = typeof body.content === "string" && body.content.trim() ? body.content : "";
+        const loaded = inline ? { name: body.skill ?? "skill", source: inline } : loadDemoSkill(skillRef);
         const skill: string = body.skill ?? loaded.name;
-        const source = loaded.source || (typeof body.content === "string" ? body.content : "");
+        const source = loaded.source;
         const contentHash = createHash("sha256").update(source).digest("hex");
         const terms = {
           skill,
@@ -388,10 +410,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       // ── /chatroom: run the REAL audit pipeline → record each stage + verdict on the task topic ──
       case "runAudit": {
-        // 4 OpenAI stages (or canned fallback) → HCS stages + verdict(+capabilities) + HCS-1 report + registry
+        // 4 OpenAI stages (or canned fallback) → HCS stages + verdict(+capabilities) + HCS-1 report + registry.
+        // Author-submitted skills pass their actual `files` (+ `skill` name); demo skills pass a `skillRef`.
         const result = await auditTaskToHcs(client, {
           taskTopicId: body.taskTopicId,
           skillRef: body.skillRef ?? body.skill,
+          files: Array.isArray(body.files) && body.files.length ? body.files : undefined,
+          skillName: body.skill,
           registryTopicId: body.registryTopicId,
         });
         return res.status(200).json(result);
@@ -415,6 +440,72 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             mintToAccountId: body.mintToAccountId,
           })
         );
+      }
+
+      // ── /publish: author publishes a PREMIUM (royalty-bearing) verified skill ──
+      // Runs AFTER a SAFE verdict + the Arc escrow has been released on-chain. Mints the
+      // VERIFIED NFT (reusing finalizeTask), creates a Hedera license collection carrying a
+      // real author CustomRoyaltyFee, and records the premium skill in db/skills.json.
+      case "publishPremiumSkill": {
+        const skill: string = body.skill;
+        const author = body.author || {}; // { hederaId?, evm, humanId }
+        const royaltyPct = Math.max(1, Math.min(99, Math.round(Number(body.royaltyPct ?? 10))));
+        if (body.verdict !== "SAFE") return res.status(400).json({ error: "premium publish requires a SAFE verdict" });
+        if (!skill) return res.status(400).json({ error: "skill required" });
+        // hederaId is OPTIONAL: with it → the Hedera CustomRoyaltyFee rail is added;
+        // without it → Arc x402 split only (royalty rides the escrow developer = author wallet).
+        const hederaId: string | null = /^0\.0\.\d+$/.test(String(author.hederaId || "")) ? author.hederaId : null;
+
+        // 1) VERIFIED NFT + decision/review + main-registry update (reuse the chatroom finalizer)
+        const finalize = await finalizeTaskToHcs(client, {
+          taskTopicId: body.taskTopicId,
+          skill,
+          verdict: "SAFE",
+          approve: true,
+          rating: body.rating,
+          comment: body.comment ?? "Premium skill — author self-published, clean audit.",
+          requester: hederaId ?? (body.requester || "author"),
+          auditor: body.auditor || getOperatorId(),
+          reviewTopicId: body.reviewTopicId,
+          votingTopicId: body.votingTopicId,
+          registryTopicId: body.registryTopicId,
+          mintToAccountId: hederaId ?? undefined, // else the VERIFIED NFT stays in the operator treasury
+        });
+
+        // 2) premium LICENSE collection — with the author's real CustomRoyaltyFee when a Hedera
+        //    account was supplied, otherwise a plain license (royalty rides Arc x402 only).
+        const license = await createLicenseCollection(client, hederaId
+          ? { name: `MARS Premium · ${skill}`.slice(0, 100), symbol: "MARSP", royaltyCollectorAccountId: hederaId, numerator: royaltyPct, denominator: 100, fallbackHbar: 1 }
+          : { name: `MARS Premium · ${skill}`.slice(0, 100), symbol: "MARSP" });
+
+        // 3) persist the premium skill — author-submitted files when present, else a demo ref
+        const provided: { name: string; content: string }[] | null = Array.isArray(body.files) && body.files.length ? body.files : null;
+        const loaded = provided ? null : loadDemoSkill(body.skillRef ?? skill);
+        const files = provided ?? (loaded?.source ? [{ name: loaded.name || skill, content: loaded.source }] : []);
+        const srcForHash = provided ? provided.map((f) => f.content).join("\n") : (loaded?.source || skill);
+        const fileSha256 = createHash("sha256").update(srcForHash).digest("hex");
+        const record = savePremiumSkill({
+          skill,
+          files,
+          author: { hederaId, evm: author.evm ?? null, humanId: author.humanId ?? null },
+          royaltyPct,
+          price: body.price ?? null,
+          escrowJobId: body.escrowJobId ?? null,
+          licenseTokenId: license.tokenId,
+          verifiedTokenId: finalize.mint?.tokenId ?? null,
+          auditId: body.auditId ?? null,
+          fileSha256,
+        });
+
+        return res.status(200).json({
+          ok: true,
+          skill,
+          premium: true,
+          royaltyPct,
+          verified: finalize.mint ?? null,
+          license, // { tokenId, name, symbol, royalty:{ collector, numerator, denominator, fallbackHbar } }
+          record,
+        });
       }
 
       // ── HCS-11: AGENT PROFILE ─────────────────────────────────
@@ -521,7 +612,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             "createSkillsRegistry / createVersionRegistry / registerSkill / registerVersion / uploadManifest",
             "trustScore",
             "createRfqBoard / rfqAnnounce / rfqPropose / rfqRespond / rfqComplete / rfqWithdraw / rfqList",
-            "createFlora / floraChat / floraRead / ensureChatRoom / auditorReply / createTask / runAudit / finalizeTask",
+            "createFlora / floraChat / floraRead / ensureChatRoom / auditorReply / createTask / runAudit / finalizeTask / publishPremiumSkill",
             "createProfile",
             "reputationDeploy / reputationMint / reputationTransfer / reputationBurn / reputationBalance",
             "reputationVotingDeploy / voteGood / voteBad / removeVote / reputationScore",
