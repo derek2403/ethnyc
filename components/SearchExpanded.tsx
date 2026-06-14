@@ -1,21 +1,23 @@
 import { useState } from "react";
-import { AUDITS, AUDITORS, SKILLS, USERS, lookup } from "./marsData";
+import { lookup } from "./marsData";
+import { useMars } from "./marsState";
 import { AuditDetail, AuditorDetail, Eyebrow, SkillDetail, UserDetail } from "./MarsUI";
 
 // Expanded Cross-chain Search — a MARS block explorer. Resolve any platform
-// id: skill, agent (user) id, auditor id, audit id, or HCS topic.
-
-const EXAMPLES: { label: string; sample: string }[] = [
-  { label: "Skill", sample: SKILLS[0].id },
-  { label: "Auditor id", sample: AUDITORS[6].id },
-  { label: "Agent id", sample: USERS[0].id },
-  { label: "Audit id", sample: AUDITS[0].id },
-];
+// id: skill, agent (user) id, audit id, or HCS topic — against the live DB.
 
 export default function SearchExpanded() {
+  const { state } = useMars();
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
-  const result = submitted ? lookup(submitted) : null;
+  const result = submitted ? lookup(state, submitted) : null;
+
+  // example chips drawn from whatever is actually in the DB
+  const EXAMPLES = [
+    state.skills[0] && { label: "Skill", sample: state.skills[0].id },
+    state.audits[0] && { label: "Audit id", sample: state.audits[0].id },
+    state.users[0] && { label: "Agent id", sample: state.users[0].id },
+  ].filter(Boolean) as { label: string; sample: string }[];
 
   const run = (q: string) => {
     setQuery(q);
