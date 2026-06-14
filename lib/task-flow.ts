@@ -1,16 +1,39 @@
-// lib/task-flow.ts — the ONE shared MARS task flow, used by BOTH the CLI
-// (scripts/run-task.ts) and the curl endpoint (pages/api/run-task.ts).
+// lib/task-flow.ts — the ONE shared MARS task flow. This is the single source of
+// truth, called by BOTH entrypoints so they behave identically:
+//   • the CLI     → scripts/run-task.ts   (npx tsx scripts/run-task.ts <skill> [agent])
+//   • the curl API → pages/api/run-task.ts (curl -N ".../api/run-task?agent_id=…&skill=…")
 //
-// Given an agent_id and a skill reference (local path | demo name | npm package |
-// github/url), it runs the whole thing end-to-end:
+// Given an agent_id (the requester) and a skill reference (local path | demo name |
+// npm package | github raw url), runTaskFlow() runs the entire lifecycle end-to-end:
 //
-//   STEP 1 — negotiate + create the task   (HCS-16 room → AI quote → task topic)
-//   STEP 2 — run the auditing procedure     (the REAL pipeline, OpenAI per stage)
-//   STEP 3 — add to db + /skills + whitelist (verify the skill, license the agent_id)
+//   STEP 1  negotiate + create the task   — HCS-16 room (ask → AI quote → accept), then a
+//                                           fresh per-task HCS topic + a registry job_posted
+//   STEP 2  run the auditing procedure     — the REAL pipeline: 4 OpenAI stages (scanner →
+//                                           sandbox → fork → synthesizer) + a Phala TDX
+//                                           attestation; every stage + verdict posted to HCS
+//   STEP 3  add to db + /skills + whitelist — on SAFE: save the versioned skill, register it,
+//                                           and add the requester to licensed_agents
+//   STEP 4  requester decision + mint NFT   — approve (SAFE) / block (DANGEROUS); review the
+//                                           auditor; mint a VERIFIED HTS NFT to the requester
+//   STEP 5  rate + comment the auditor      — AI comment (gpt-4.1-nano) → HCS + the DB
 //
-// Output is streamed through the caller-supplied `write(line)` sink so the CLI can
-// colour it and the endpoint can pipe it straight to `curl`. The structured result
-// is returned for programmatic callers.
+// WHERE THINGS ARE STORED
+//   HCS  · negotiation room (HCS-16)        — the 3 chat lines
+//        · per-task topic (id == auditId)   — init → stages → verdict → decision → reviewed → minted
+//        · main registry                    — job_posted (agreed) → job_updated (verified/rejected)
+//        · HCS-1 file                        — the skill source when > 1000 bytes (hcs://1/<id>)
+//        · auditor review + voting topics    — the rating, AI comment, and a "good" reputation vote
+//        · HTS                               — the VERIFIED NFT collection + minted serial
+//   DB   · db/audits.json   — the audit record (synthesizer verdict + the full TDX quote)
+//        · db/attest.json   — the same attestation, keyed by audit_id (served by /api/attest)
+//        · db/skills.json   — verified-skill registry; licensed_agents[] is the whitelist
+//        · skills/<name>-v<N>/ — the actual saved skill files on disk
+//        · db/auditors.json — the auditor profile: reviews[] + aggregate rating
+//        · db/users.json    — the user record: reviews_given[]
+//
+// Output is streamed line-by-line through the caller-supplied `write(line)` sink, so the
+// CLI can colour it (color:true) and the endpoint can pipe plain text to `curl`
+// (color:false). The structured TaskFlowResult is returned for programmatic callers.
 import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import {
@@ -22,19 +45,24 @@ import {
 } from "./hedera";
 import { loadState, saveState } from "./state";
 import { initMars } from "./agents";
-import { REQUESTER, AUDITOR, requesterAsk, requesterAccept, type DemoSkill } from "./demo-skills";
-import { generateAuditorQuote } from "./auditor";
+import { REQUESTER, AUDITOR, AUDITOR_REVIEW_TOPIC, AUDITOR_VOTING_TOPIC, requesterAsk, requesterAccept, type DemoSkill } from "./demo-skills";
+import { generateAuditorQuote, generateReviewComment } from "./auditor";
 import { resolveRemoteSkill, resolveLocalDemoSkill, readLocalSkill } from "./skill-source.mjs";
 import { runAuditPipeline, DEFAULT_MODEL } from "./audit-core.mjs";
-import { startAudit, setAuditStage, appendEvidence, finishAudit, saveVerifiedSkill, saveAttestation } from "./db.mjs";
+import { startAudit, setAuditStage, appendEvidence, finishAudit, saveVerifiedSkill, saveAttestation, saveAuditorReview } from "./db.mjs";
+// post-audit lifecycle (from the cedric/jy branch): requester decision → review the
+// auditor → mint a VERIFIED HTS NFT to the requester, all recorded on the task topic.
+import { finalizeTaskToHcs } from "./audit-task";
 
 // ── ANSI palette (stripped to empty strings when color:false, e.g. for the endpoint) ──
 const ANSI = { dim: "\x1b[2m", reset: "\x1b[0m", bold: "\x1b[1m", blue: "\x1b[34m", purple: "\x1b[35m", green: "\x1b[32m", red: "\x1b[31m", amber: "\x1b[33m", cyan: "\x1b[36m" };
 const PLAIN = { dim: "", reset: "", bold: "", blue: "", purple: "", green: "", red: "", amber: "", cyan: "" };
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms)); // pace the chat bubbles
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);   // "scanner" → "Scanner"
+// Map a pipeline stage to the audit record's stage number (1-3); the synthesizer is stage 4.
 const STAGE_NUM: Record<string, number> = { scanner: 1, sandbox: 2, fork: 3 };
+// Turn the synthesizer's risk band into a 0-100 trust score for the on-chain verdict.
 const TRUST: Record<string, number> = { none: 98, low: 90, medium: 58, high: 16, critical: 4 };
 
 export interface TaskFlowOptions {
@@ -58,6 +86,9 @@ export interface TaskFlowResult {
   licensed: boolean;
   verified: { verified_name: string; version: number; path: string } | null;
   attested: boolean;
+  decision: "approved" | "disapproved";
+  mint: { tokenId: string; serial: string; owner: string } | null;
+  review: { auditor: string; rating: number; comment: string; source: "openai" | "fallback"; auditorAvgRating: string };
   hashscanTask: string;
 }
 
@@ -85,13 +116,15 @@ async function ensureChatRoom(client: ReturnType<typeof getClient>): Promise<str
  * Opens (and always closes) its own Hedera client. Throws if OPENAI_API_KEY is unset.
  */
 export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult> {
-  const C = opts.color === false ? PLAIN : ANSI;
-  const w = opts.write ?? (() => {});
-  const requester = opts.agentId || REQUESTER; // the agent that gets licensed on SAFE
-  const model = opts.model || process.env.OPENAI_MODEL || DEFAULT_MODEL;
+  const C = opts.color === false ? PLAIN : ANSI;        // colour palette (or no-op for curl)
+  const w = opts.write ?? (() => {});                   // line sink (console.log / res.write)
+  const requester = opts.agentId || REQUESTER;          // the agent that gets licensed on SAFE
+  const model = opts.model || process.env.OPENAI_MODEL || DEFAULT_MODEL; // audit model (gpt-4o-mini)
 
+  // The audit is real — there's no fake path. Fail fast if the key is missing.
   if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is required — the auditor runs the real pipeline.");
 
+  // Fetch the package to audit → { name, files[] } (local file/dir, demo, npm, or url).
   const { name, files } = await resolveSkill(opts.skillRef);
   // a lightweight descriptor purely for the negotiation lines (scope is what we're about to find out)
   const desc: DemoSkill = {
@@ -148,14 +181,21 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
     // ════════════════════════════════════════════════════════════════════════
     // STEP 2 — RUN THE AUDITING PROCEDURE (the REAL pipeline, OpenAI per stage)
     // ════════════════════════════════════════════════════════════════════════
-    const auditId = "audit-" + createHash("sha256").update(name + Date.now()).digest("hex").slice(0, 6);
+    // The audit id IS the on-chain job id: the HCS task topic created above (the same id
+    // used as job_posted's jobId + auditTrailTopicId). So audits.json keys directly to the
+    // replayable HCS trail — no separate random id.
+    const auditId = taskTopicId;
     startAudit({ auditId, skill: name, agentId: requester, auditor: AUDITOR, model, files: files.map((f) => f.name) });
     w(`${C.cyan}${C.bold}AUDIT${C.reset}  ${C.dim}${auditId} · model ${model}${C.reset}`);
 
+    // runAuditPipeline does the 4 OpenAI stages + the Phala attestation. We don't just wait
+    // for the result — the onEvent callback fires per stage so we can (a) stream live progress
+    // to the caller and (b) mirror each stage into db/audits.json as it happens, which is what
+    // makes the dashboard's "live audits" panel update in real time.
     const result = await runAuditPipeline({
       name, files, auditId, model,
       apiKey: process.env.OPENAI_API_KEY,
-      attestorUrl: process.env.PHALA_ATTESTOR_URL,
+      attestorUrl: process.env.PHALA_ATTESTOR_URL, // unset → attestation skipped (verdict still stands)
       onEvent: (e: {
         type?: string; stage?: string; name?: string; status?: string;
         summary?: string; findings?: { severity: string }[]; error?: string;
@@ -184,11 +224,13 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
       },
     });
 
-    const verdict = result.verdict;
-    const fileSha256 = result.record.file_sha256;
+    const verdict = result.verdict;                 // synthesizer output (verdict/risk/summary/caps/…)
+    const fileSha256 = result.record.file_sha256;   // hash of the audited bytes (bound into the attestation)
     const trust = TRUST[String(verdict.risk).toLowerCase()] ?? (result.safe ? 90 : 6);
 
     // ── post each REAL stage + the verdict to the task topic (the on-chain audit trail) ──
+    // The pipeline already ran; here we write the evidence to HCS in order so the task topic is
+    // a complete, replayable record. A stage with a high/critical finding is marked "fail".
     w(`\n  ${C.dim}posting audit trail → task topic${C.reset}`);
     for (const ev of result.record.evidence as { stage: string; summary?: string; findings?: { severity: string }[] }[]) {
       const status = ev.findings?.some((f) => ["high", "critical"].includes(String(f.severity).toLowerCase())) ? "fail" : "pass";
@@ -202,14 +244,43 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
     // STEP 3 — ADD TO DB + /skills + WHITELIST the agent_id
     // ════════════════════════════════════════════════════════════════════════
     // On SAFE: write the versioned skill to /skills, register it in db/skills.json,
-    // and add the requester to that skill's licensed_agents (the whitelist).
+    // and add the requester to that skill's licensed_agents (the whitelist). DANGEROUS → skip.
     let verified: { verified_name: string; version: number; path: string } | null = null;
     if (result.safe) {
       verified = saveVerifiedSkill({ skill: name, files, agentId: requester, auditId, fileSha256 });
     }
+    // finishAudit flips the record to "audited" and stores the synthesizer verdict + the FULL
+    // TDX quote into db/audits.json; saveAttestation also keeps it in db/attest.json (for /api/attest).
     finishAudit(auditId, { verdict: verdict.verdict, risk: verdict.risk, fileSha256, verified, attestation: result.attestation, steps: result.record.evidence, verdictFull: verdict });
     if (result.attestation) saveAttestation(auditId, result.attestation, { skill: name, verdict: verdict.verdict, agent_id: requester });
-    await submitMessage(client, registryTopicId, buildJobPosted({ jobId: taskTopicId, skill: name, requester, scope: desc.scope, auditTrailTopicId: taskTopicId, status: result.safe ? "verified" : "dangerous" }));
+
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 4 — requester DECISION → review the auditor → mint a VERIFIED HTS NFT
+    // ════════════════════════════════════════════════════════════════════════
+    // A skill is VERIFIED only on the requester's approval (SAFE → approve + mint;
+    // DANGEROUS → block). finalizeTaskToHcs records the decision + auditor review on
+    // the task topic, rates the auditor on its own review/voting HCS, mints a VERIFIED
+    // HTS NFT to the requester on SAFE, and updates the main registry (verified/rejected).
+    const approve = result.safe;
+    const rating = 5; // the auditor did its job in both cases (clean verdict / caught the threat)
+    const review = await generateReviewComment({ skill: name, verdict: verdict.verdict, rating, auditor: AUDITOR });
+    const fin = await finalizeTaskToHcs(client, {
+      taskTopicId, skill: name, verdict: verdict.verdict, approve, rating, comment: review.comment,
+      requester, auditor: AUDITOR,
+      reviewTopicId: AUDITOR_REVIEW_TOPIC, votingTopicId: AUDITOR_VOTING_TOPIC,
+      registryTopicId, mintToAccountId: requester,
+    });
+
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 5 — the user-agent's rating + AI comment → recorded on HCS (above) + DB
+    // ════════════════════════════════════════════════════════════════════════
+    // finalizeTaskToHcs already wrote the review to the auditor's review + voting HCS
+    // topics; here we persist the same rating + comment into the DB: the comment lives
+    // in the AUDITOR's profile (auditors.json) and on the USER's record (users.json).
+    const savedReview = saveAuditorReview({
+      auditorId: AUDITOR, reviewerId: requester, rating: fin.rating, comment: fin.comment,
+      skill: name, verdict: verdict.verdict, reviewSeq: fin.reviewSeq, voteSeq: fin.voteSeq, taskTopicId,
+    });
 
     // ── FINAL — the two closing steps, mirrored from pages/audit.tsx:
     //   (a) Synthesizer verdict (summary · capabilities · recommendation)
@@ -230,6 +301,13 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
     } else {
       w(`\n  ${C.red}✗ flagged ${verdict.verdict}${C.reset}  — not verified, not licensed`);
     }
+
+    // STEP 4 + 5 result — requester decision, auditor review/rating + AI comment, VERIFIED NFT
+    w(`\n  ${approve ? C.green + "APPROVED" : C.red + "BLOCKED"}${C.reset}  ${C.dim}requester ${fin.decision}${C.reset}`);
+    w(`  ${C.dim}auditor reviewed${C.reset} ${C.amber}${"★".repeat(fin.rating)}${C.reset} ${C.dim}(${AUDITOR} → avg ${savedReview.rating} over ${savedReview.review_count})${C.reset}`);
+    w(`  ${C.dim}comment (${review.source}):${C.reset} "${fin.comment}"`);
+    w(`  ${C.dim}saved → auditors.json[${AUDITOR}].reviews · users.json[${requester}].reviews_given · HCS review/voting${C.reset}`);
+    if (fin.mint) w(`  ${C.green}✓ VERIFIED NFT${C.reset}  ${hashscan("token", fin.mint.tokenId)} ${C.dim}#${fin.mint.serial} → ${fin.mint.owner}${C.reset}`);
 
     // TEE attestation quote — the sealed proof the audit ran in the enclave
     const att = result.attestation;
@@ -258,6 +336,9 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
       skill: name, requester, auditId, taskTopicId, chatRoomTopicId,
       verdict: verdict.verdict, risk: verdict.risk, trust, safe: result.safe,
       licensed: !!(result.safe && verified), verified, attested,
+      decision: fin.decision,
+      mint: fin.mint ? { tokenId: fin.mint.tokenId, serial: fin.mint.serial, owner: fin.mint.owner } : null,
+      review: { auditor: AUDITOR, rating: fin.rating, comment: fin.comment, source: review.source, auditorAvgRating: savedReview.rating },
       hashscanTask: hashscan("topic", taskTopicId),
     };
   } finally {

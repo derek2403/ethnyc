@@ -52,6 +52,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       audit_id: result.auditId,
       task_topic: result.taskTopicId,
       attested: result.attested,
+      decision: result.decision,
+      nft: result.mint ? `${result.mint.tokenId}#${result.mint.serial}` : null,
     })}`);
   } catch (e: unknown) {
     w(`\nERROR: ${e instanceof Error ? e.message : "task flow failed"}`);
