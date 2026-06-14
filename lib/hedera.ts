@@ -327,6 +327,55 @@ export async function transferNft(
   return { status: receipt.status.toString() };
 }
 
+interface RawNft {
+  serial_number: number;
+  account_id?: string;
+  metadata?: string; // base64
+  deleted?: boolean;
+}
+
+export interface NftRecord {
+  serial: string;
+  owner: string;
+  metadata: string; // decoded
+  skill?: string; // parsed from metadata JSON
+  version?: string;
+}
+
+/** Look up a collection's minted NFTs (serial, owner, decoded metadata → skill/version).
+ *  Filter by serial / owner account / version to answer "is the NFT for this version held, and by whom?" */
+export async function checkNft(
+  tokenId: string,
+  opts: { serial?: number; account?: string; version?: string } = {}
+): Promise<{ found: boolean; count: number; nfts: NftRecord[] }> {
+  const url =
+    opts.serial != null
+      ? `${MIRROR_URL}/api/v1/tokens/${tokenId}/nfts/${opts.serial}`
+      : `${MIRROR_URL}/api/v1/tokens/${tokenId}/nfts?limit=100`;
+  const res = await fetch(url);
+  if (!res.ok) return { found: false, count: 0, nfts: [] };
+  const data = (await res.json()) as { nfts?: RawNft[] } & RawNft;
+  const raw: RawNft[] = opts.serial != null ? [data] : data.nfts ?? [];
+  let nfts: NftRecord[] = raw
+    .filter((n) => n && !n.deleted)
+    .map((n) => {
+      const metadata = n.metadata ? Buffer.from(n.metadata, "base64").toString("utf-8") : "";
+      let skill: string | undefined;
+      let version: string | undefined;
+      try {
+        const j = JSON.parse(metadata) as { skill?: string; version?: string };
+        skill = j.skill;
+        version = j.version;
+      } catch {
+        /* metadata is not JSON (e.g. a bare HRL) */
+      }
+      return { serial: String(n.serial_number), owner: n.account_id ?? "", metadata, skill, version };
+    });
+  if (opts.account) nfts = nfts.filter((n) => n.owner === opts.account);
+  if (opts.version) nfts = nfts.filter((n) => n.version === opts.version || n.metadata.includes(opts.version as string));
+  return { found: nfts.length > 0, count: nfts.length, nfts };
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // HCS-1 — FILE STORAGE (audit reports / SKILL.json manifests)
 // Topic = one file. memo `<sha256>:brotli:base64`. Submit key REQUIRED, admin key
@@ -874,8 +923,9 @@ export type AgentRole = "author" | "auditor" | "user";
 export function buildAgentRegistered(p: {
   account: string;
   role: AgentRole;
-  name: string;
   profileTopicId?: string;
+  votingTopicId?: string; // the agent's OWN good/bad voting HCS
+  reviewTopicId?: string; // the agent's OWN review HCS
   evmAddress?: string;
   worldVerified?: boolean; // World ID agentkit: is the agent's address human-backed?
   humanId?: string | null; // World AgentBook human id (anti-sybil)
@@ -885,8 +935,9 @@ export function buildAgentRegistered(p: {
     op: "agent_registered",
     account: p.account,
     role: p.role,
-    name: p.name,
     ...(p.profileTopicId && { profile_topic_id: p.profileTopicId }),
+    ...(p.votingTopicId && { voting_topic_id: p.votingTopicId }),
+    ...(p.reviewTopicId && { review_topic_id: p.reviewTopicId }),
     ...(p.evmAddress && { evm_address: p.evmAddress }),
     ...(p.worldVerified != null && { world_verified: p.worldVerified }),
     ...(p.humanId && { human_id: p.humanId }),
@@ -936,23 +987,42 @@ export function buildJobUpdated(p: {
   });
 }
 
+/** Log a completed World ID verification (the verifier's nullifier / evm hash) to the main registry. */
+export function buildHumanVerified(
+  nullifier: string,
+  opts: { evmAddress?: string; signalHash?: string; account?: string } = {}
+): string {
+  return JSON.stringify({
+    p: "mars-registry",
+    op: "human_verified",
+    nullifier,
+    ...(opts.evmAddress && { evm_address: opts.evmAddress }),
+    ...(opts.signalHash && { signal_hash: opts.signalHash }),
+    ...(opts.account && { account: opts.account }),
+    timestamp: new Date().toISOString(),
+  });
+}
+
 export interface RegistryView {
   agents: Array<Record<string, unknown>>;
   jobs: Array<Record<string, unknown>>;
+  humans: Array<Record<string, unknown>>;
 }
 
 /** Replay the main registry → current list of agents + jobs (job updates fold into their job). */
 export function computeRegistry(messages: MirrorMessage[]): RegistryView {
   const agents: Record<string, Record<string, unknown>> = {};
   const jobs: Record<string, Record<string, unknown>> = {};
+  const humans: Record<string, Record<string, unknown>> = {};
   for (const m of messages) {
     if (m.p !== "mars-registry") continue;
     if (m.op === "agent_registered") {
       agents[m.account as string] = {
         account: m.account,
         role: m.role,
-        name: m.name,
         profile_topic_id: m.profile_topic_id,
+        voting_topic_id: m.voting_topic_id,
+        review_topic_id: m.review_topic_id,
         evm_address: m.evm_address,
         world_verified: m.world_verified,
         human_id: m.human_id,
@@ -976,9 +1046,17 @@ export function computeRegistry(messages: MirrorMessage[]): RegistryView {
         if (m.verdict) j.verdict = m.verdict;
         if (m.trust_score != null) j.trust_score = m.trust_score;
       }
+    } else if (m.op === "human_verified") {
+      humans[m.nullifier as string] = {
+        nullifier: m.nullifier,
+        evm_address: m.evm_address,
+        signal_hash: m.signal_hash,
+        account: m.account,
+        _seq: m._seq,
+      };
     }
   }
-  return { agents: Object.values(agents), jobs: Object.values(jobs) };
+  return { agents: Object.values(agents), jobs: Object.values(jobs), humans: Object.values(humans) };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
