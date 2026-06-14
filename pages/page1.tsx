@@ -64,7 +64,7 @@ export default function Page1() {
           {/* Replace /public/logo.svg with your logo (SVG preferred; or a transparent PNG — see note). */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.svg" alt="MARS" style={{ height: 34, width: "auto", display: "block" }} />
-          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink)", letterSpacing: ".06em" }}>{clock} NYC</span>
+          <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink)", letterSpacing: ".06em" }}>{clock}</span>
         </header>
 
         {/* ── BENTO GRID ── */}
