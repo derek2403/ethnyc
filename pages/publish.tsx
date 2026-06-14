@@ -1,7 +1,8 @@
 // pages/publish.tsx — AUTHOR flow: publish a PREMIUM, royalty-bearing skill.
 //
 // Minimal, author-friendly: the only decisions an author makes are (1) verify they're
-// human, (2) pick the skill, (3) set the royalty %. One "Publish" button then runs the
+// human, (2) provide the skill (drag/drop files · paste · GitHub/URL/npm · or a demo),
+// (3) set the royalty %. One "Publish" button then runs the
 // whole on-chain pipeline automatically — approve → create+fund the Arc escrow audit job →
 // auditor posts bond → real audit → release escrow → mint the Hedera VERIFIED NFT + a
 // premium license, and list the skill. Fee/bond/Hedera-payout/Gateway live under "Advanced".
@@ -78,9 +79,17 @@ export default function Publish() {
   const { writeContractAsync } = useWriteContract();
 
   // author choices (the only things they set)
-  const [skillRef, setSkillRef] = useState(DEMO_SKILLS[0].ref);
   const [royalty, setRoyalty] = useState(10);
   const price = "0.01"; // per-use price buyers pay
+
+  // skill source — Upload (drag/drop) · Paste · GitHub/URL/npm · Demo
+  const [srcMode, setSrcMode] = useState<"upload" | "paste" | "url" | "demo">("upload");
+  const [files, setFiles] = useState<{ name: string; content: string }[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [pasteName, setPasteName] = useState("SKILL.md");
+  const [urlRef, setUrlRef] = useState("");
+  const [demoRef, setDemoRef] = useState(DEMO_SKILLS[0].ref);
 
   // advanced (sensible defaults — hidden by default)
   const [fee, setFee] = useState("1");
@@ -120,7 +129,46 @@ export default function Publish() {
 
   const amt = (v: string) => parseUnits(v || "0", USDC_DECIMALS);
   const mark = (key: StepKey, status: StepState["status"], note?: string) => setSteps((s) => ({ ...s, [key]: { status, note } }));
-  const ready = mounted && verified && isConnected && onArc && !running;
+
+  // ── skill-source ingestion ─────────────────────────────────────────
+  const TEXT_RE = /\.(md|markdown|js|mjs|cjs|ts|tsx|json|py|txt|ya?ml|toml|sh|env|rb|go)$/i;
+  const ingest = async (list: FileList | File[]) => {
+    const out: { name: string; content: string }[] = [];
+    for (const f of Array.from(list)) {
+      const rel = (f as any).webkitRelativePath || f.name;
+      if (!TEXT_RE.test(f.name) && f.name.toUpperCase() !== "SKILL.MD") continue;
+      if (f.size > 200_000) continue;
+      out.push({ name: rel, content: await f.text() });
+    }
+    if (out.length) setFiles((prev) => { const m = new Map(prev.map((p) => [p.name, p])); out.forEach((o) => m.set(o.name, o)); return Array.from(m.values()).slice(0, 40); });
+  };
+  const baseName = (p: string) => (p.split("/").pop() || p).replace(/\.[^.]+$/, "");
+  const deriveName = (fs: { name: string }[]) => {
+    const main = fs.find((f) => /skill\.md$/i.test(f.name)) ?? fs[0];
+    const parts = main.name.split("/");
+    return parts.length > 1 ? parts[0] : baseName(main.name) || "skill";
+  };
+
+  // Resolve whatever the author provided into { name, files } before any on-chain step.
+  const getSource = async (): Promise<{ name: string; files: { name: string; content: string }[] }> => {
+    if (srcMode === "upload") {
+      if (!files.length) throw new Error("Add at least one skill file (SKILL.md, code, manifest).");
+      return { name: deriveName(files), files };
+    }
+    if (srcMode === "paste") {
+      if (!pasteText.trim()) throw new Error("Paste your skill source first.");
+      const nm = (pasteName || "SKILL.md").trim();
+      return { name: nm.replace(/\.[^.]+$/, "") || "skill", files: [{ name: nm, content: pasteText }] };
+    }
+    const ref = (srcMode === "url" ? urlRef : demoRef).trim();
+    if (!ref) throw new Error("Enter a GitHub/raw URL or npm package.");
+    const r = await call({ action: "resolveSkill", ref });
+    if (r.error || !r.files?.length) throw new Error(r.error || "Could not fetch that skill.");
+    return { name: r.name, files: r.files };
+  };
+
+  const hasSource = srcMode === "upload" ? files.length > 0 : srcMode === "paste" ? !!pasteText.trim() : srcMode === "url" ? !!urlRef.trim() : true;
+  const ready = mounted && verified && isConnected && onArc && hasSource && !running;
 
   // one-time: register the author's wallet with Circle Gateway so it can RECEIVE x402 royalties
   const registerGateway = async () => {
@@ -145,8 +193,11 @@ export default function Publish() {
     try {
       const feeUnits = amt(fee);
       const bondUnits = amt(bond);
-      const sel = DEMO_SKILLS.find((s) => s.ref === skillRef);
-      const skill = (sel?.ref || skillRef).replace(/\.(js|json|md)$/i, "");
+
+      // 0 · resolve the author's skill source (upload / paste / URL / demo) — fail fast
+      const src = await getSource();
+      const skill = (src.name || "skill").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "skill";
+      const content = src.files.map((f) => `=== ${f.name} ===\n${f.content}`).join("\n").slice(0, 8000);
 
       // 1 · approve (only if needed)
       mark("approve", "running");
@@ -177,11 +228,11 @@ export default function Publish() {
       if (!br.ok || !bd.ok) throw new Error(bd.error || "auditor could not post bond");
       mark("bond", "done");
 
-      // 5 · run the real audit
+      // 5 · run the real audit (on the author's actual source)
       mark("audit", "running");
-      const created = await call({ action: "createTask", skillRef, skill, requester: hederaId || "author", auditor: "mars-premium-auditor", price: `${price} USDC`, registryTopicId });
+      const created = await call({ action: "createTask", skill, content, requester: hederaId || "author", auditor: "mars-premium-auditor", price: `${price} USDC`, registryTopicId });
       if (created.error || !created.taskTopicId) throw new Error(created.error || "could not create audit task");
-      const aud = await call({ action: "runAudit", taskTopicId: created.taskTopicId, skillRef, registryTopicId });
+      const aud = await call({ action: "runAudit", taskTopicId: created.taskTopicId, files: src.files, skill, registryTopicId });
       if (aud.error) throw new Error(aud.error);
       if (aud.verdict !== "SAFE") { mark("audit", "error", `verdict ${aud.verdict}`); throw new Error(`Audit verdict is ${aud.verdict} — this skill can't be published. Try a safe skill.`); }
       mark("audit", "done", `SAFE · trust ${aud.trustScore}`);
@@ -197,7 +248,7 @@ export default function Publish() {
         action: "publishPremiumSkill",
         taskTopicId: created.taskTopicId,
         skill: aud.skill ?? skill,
-        skillRef,
+        files: src.files,
         verdict: "SAFE",
         author: { hederaId: hederaId || null, evm: address, humanId },
         royaltyPct: royalty,
@@ -258,12 +309,61 @@ export default function Publish() {
           <section className={`pub-card ${!verified ? "pub-locked" : ""}`}>
             <StepHead n={2} title="Publish your skill" done={!!result} />
 
-            <label className="pub-field">
-              <span className="pub-label">Skill</span>
-              <select className="pub-input" value={skillRef} onChange={(e) => setSkillRef(e.target.value)} disabled={running}>
-                {DEMO_SKILLS.map((s) => <option key={s.ref} value={s.ref}>{s.label}</option>)}
-              </select>
-            </label>
+            <div className="pub-field">
+              <span className="pub-label">Your skill</span>
+              <div className="pub-tabs">
+                {([["upload", "Upload"], ["paste", "Paste"], ["url", "GitHub / URL"], ["demo", "Demo"]] as const).map(([m, l]) => (
+                  <button key={m} type="button" disabled={running} onClick={() => setSrcMode(m)} className={`pub-tab ${srcMode === m ? "pub-tab--on" : ""}`}>{l}</button>
+                ))}
+              </div>
+
+              {srcMode === "upload" && (
+                <div className="mt-2">
+                  <label
+                    htmlFor="pub-file"
+                    className={`pub-drop ${dragOver ? "pub-drop--over" : ""}`}
+                    onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files?.length) ingest(e.dataTransfer.files); }}
+                  >
+                    <input id="pub-file" type="file" multiple hidden onChange={(e) => { if (e.target.files) ingest(e.target.files); e.currentTarget.value = ""; }} />
+                    <p className="t-ink2" style={{ fontSize: 13 }}>Drag &amp; drop your <strong>SKILL.md</strong>, code or manifest</p>
+                    <p className="t-ink3" style={{ fontSize: 12 }}>or click to browse · .md .js .ts .json .py .yaml …</p>
+                  </label>
+                  {files.length > 0 && (
+                    <div className="pub-chips">
+                      {files.map((f) => (
+                        <span key={f.name} className="pub-chip">
+                          <span className="pub-code">{f.name}</span>
+                          <button type="button" className="pub-chip-x" onClick={() => setFiles((p) => p.filter((x) => x.name !== f.name))}>×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {srcMode === "paste" && (
+                <div className="flex flex-col gap-2 mt-2">
+                  <input className="pub-input" style={{ width: 220 }} value={pasteName} onChange={(e) => setPasteName(e.target.value)} disabled={running} placeholder="SKILL.md" />
+                  <textarea className="pub-input pub-textarea" value={pasteText} onChange={(e) => setPasteText(e.target.value)} disabled={running} placeholder={"# My Skill\n\nPaste your SKILL.md, MCP manifest, or code here…"} />
+                </div>
+              )}
+
+              {srcMode === "url" && (
+                <input className="pub-input mt-2" value={urlRef} onChange={(e) => setUrlRef(e.target.value)} disabled={running} placeholder="github.com/user/repo/blob/main/SKILL.md · a raw URL · or an npm package" />
+              )}
+
+              {srcMode === "demo" && (
+                <select className="pub-input mt-2" value={demoRef} onChange={(e) => setDemoRef(e.target.value)} disabled={running}>
+                  {DEMO_SKILLS.map((s) => <option key={s.ref} value={s.ref}>{s.label}</option>)}
+                </select>
+              )}
+
+              {(srcMode === "upload" && files.length > 0) && (
+                <p className="t-ink3" style={{ fontSize: 12, marginTop: 6 }}>Publishes as <span className="t-ink">{deriveName(files)}</span> · {files.length} file{files.length > 1 ? "s" : ""}</p>
+              )}
+            </div>
 
             <label className="pub-field mt-3">
               <span className="pub-label">Your royalty — <span className="t-mars" style={{ fontWeight: 700 }}>{royalty}%</span> of every use</span>
@@ -386,6 +486,20 @@ export default function Publish() {
         .pub-input { background: #fff; border: 1px solid var(--hair); border-radius: 9px; padding: 9px 11px; font-size: 13px; color: var(--ink); font-family: var(--sans); outline: none; }
         .pub-input:focus { border-color: var(--comm); box-shadow: 0 0 0 3px rgba(47, 111, 208, 0.12); }
         .pub-range { accent-color: var(--mars); width: 100%; max-width: 320px; }
+        .pub-textarea { width: 100%; min-height: 140px; resize: vertical; font-family: var(--code); font-size: 12px; line-height: 1.5; }
+
+        .pub-tabs { display: inline-flex; gap: 2px; padding: 3px; background: var(--inset); border: 1px solid var(--hair); border-radius: 10px; }
+        .pub-tab { border: none; background: transparent; color: var(--ink-2); font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 7px; cursor: pointer; }
+        .pub-tab:disabled { opacity: 0.5; cursor: default; }
+        .pub-tab--on { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+
+        .pub-drop { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-align: center; padding: 22px; border: 1.5px dashed var(--hair); border-radius: 12px; background: rgba(255,255,255,0.5); cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease; }
+        .pub-drop:hover { border-color: var(--ink-3); }
+        .pub-drop--over { border-color: var(--mars); background: rgba(194,84,42,0.06); }
+        .pub-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+        .pub-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; background: #fff; border: 1px solid var(--hair); border-radius: 8px; }
+        .pub-chip-x { border: none; background: transparent; color: var(--ink-3); font-size: 15px; line-height: 1; cursor: pointer; padding: 0 2px; }
+        .pub-chip-x:hover { color: var(--danger); }
 
         .pub-btn { border: 1px solid transparent; border-radius: 10px; padding: 9px 16px; font-size: 13px; font-weight: 600; color: #fff; cursor: pointer; transition: filter 0.15s ease, background 0.15s ease; }
         .pub-btn:disabled { opacity: 0.4; cursor: default; }
