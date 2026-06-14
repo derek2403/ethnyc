@@ -16,9 +16,12 @@ export const arcTestnet = defineChain({
 // USDC on Arc — the ERC-20 face of the native USDC the Circle faucet funds. 6 decimals.
 export const USDC_ADDRESS =
   "0x3600000000000000000000000000000000000000" as const;
-// MarsEscrow, deployed via hardhat/ignition/modules/EscrowArc.ts
+// MarsEscrow, deployed via hardhat/ignition/modules/EscrowArc.ts.
+// v3: createJob accepts a 0/0 DRAFT; fundFee(jobId, fee) and postBond(jobId, bond) take the
+// amount AT fund time (so each side locks its own amount independently — no ordering trap).
+// setTerms() is still available to pre-set the agreed price for display.
 export const ESCROW_ADDRESS =
-  "0x36c4D178C8bF94c30CA8508FaB1FB4C20DB9d483" as const;
+  "0xCf33C5B0EA4CBbB4291aB7265c2725106167dfE2" as const;
 
 export const USDC_DECIMALS = 6;
 
@@ -106,16 +109,33 @@ export const ESCROW_ABI = [
   },
   {
     type: "function",
+    name: "setTerms",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "jobId", type: "uint256" },
+      { name: "fee", type: "uint256" },
+      { name: "bond", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
     name: "fundFee",
     stateMutability: "nonpayable",
-    inputs: [{ name: "jobId", type: "uint256" }],
+    inputs: [
+      { name: "jobId", type: "uint256" },
+      { name: "fee", type: "uint256" },
+    ],
     outputs: [],
   },
   {
     type: "function",
     name: "postBond",
     stateMutability: "nonpayable",
-    inputs: [{ name: "jobId", type: "uint256" }],
+    inputs: [
+      { name: "jobId", type: "uint256" },
+      { name: "bond", type: "uint256" },
+    ],
     outputs: [],
   },
   {
