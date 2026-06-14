@@ -9,10 +9,12 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 import type { NextApiRequest, NextApiResponse } from "next";
+import { createHash } from "node:crypto";
 import { Client, PrivateKey } from "@hashgraph/sdk";
 import {
   getClient,
   getOperatorKey,
+  getOperatorId,
   // accounts
   createAgentAccount,
   // topics
@@ -75,11 +77,13 @@ import {
   // audit trail + schedule
   buildAuditStep,
   buildAuditVerdict,
+  buildTaskInit,
   scheduleReAudit,
 } from "@/lib/hedera";
 import { checkAgentHuman } from "@/lib/world-agentkit";
 import { registerAgent as registerAgentFlow, initMars } from "@/lib/agents";
 import { loadState, saveState } from "@/lib/state";
+import { loadDemoSkill } from "@/lib/demo-skills-loader";
 
 export const config = {
   api: { bodyParser: { sizeLimit: "5mb" } }, // audit reports / manifests can be large
@@ -313,6 +317,62 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(200).json({ messages: await readTopicMessages(body.topicId, body.limit ?? 1000) });
       }
 
+      // ── /chatroom: ONE global HCS-16 negotiation room (seeded + reused) ──
+      case "ensureChatRoom": {
+        const st = loadState();
+        if (st.chatRoomTopicId) {
+          return res.status(200).json({ chatRoomTopicId: st.chatRoomTopicId, floraId: st.chatFloraId ?? "mars-chatroom", seeded: true });
+        }
+        const floraId = "mars-chatroom";
+        const communication = await createTopic(client, hcs16Memo(floraId, 0), submitKey);
+        // marker (op:"flora_created", NOT a chat bubble) so the room is non-empty on first read
+        await submitMessage(client, communication, buildHCS16FloraCreated(getOperatorId(), communication, communication, communication, "MARS negotiation room"));
+        saveState({ chatRoomTopicId: communication, chatFloraId: floraId });
+        return res.status(200).json({ chatRoomTopicId: communication, floraId, seeded: false });
+      }
+
+      // ── /chatroom: accept the quote → spin the per-task topic + log the job ──
+      case "createTask": {
+        // skill source is read SERVER-SIDE from demo/skills (file OR Claude-Skill folder) so `init` is authoritative
+        const skillRef: string = body.skillRef ?? body.skillFile ?? "price-checker.js";
+        const loaded = loadDemoSkill(skillRef);
+        const skill: string = body.skill ?? loaded.name;
+        const source = loaded.source || (typeof body.content === "string" ? body.content : "");
+        const contentHash = createHash("sha256").update(source).digest("hex");
+        const terms = {
+          skill,
+          scope: body.scope ?? "network · keys · wallet",
+          requester: body.requester,
+          auditor: body.auditor,
+          price: body.price ?? "—",
+          bond: body.bond ?? "—",
+          time: body.time ?? "—",
+          version: body.version,
+          tier: body.tier,
+          compliance: body.compliance,
+          contentHash,
+          chatRoomTopicId: body.chatRoomTopicId,
+        };
+        // inline the source if `init` stays under the 1KB HCS message limit; else offload to HCS-1
+        let content = source;
+        let contentHrl: string | undefined;
+        if (Buffer.byteLength(buildTaskInit({ ...terms, content: source }), "utf-8") > 1000) {
+          const file = await uploadFileHCS1(client, source, "application/javascript");
+          content = file.hrl;
+          contentHrl = file.hrl;
+        }
+        const taskTopicId = await createTopic(client, `mars-task:${skill}`, submitKey);
+        const init = buildTaskInit({ ...terms, content, contentHrl });
+        const initRes = await submitMessage(client, taskTopicId, init);
+        // index the task into the main registry (job points at its own audit-trail topic = the task topic)
+        let registrySeq: string | undefined;
+        if (body.registryTopicId) {
+          const reg = await submitMessage(client, body.registryTopicId, buildJobPosted({ jobId: taskTopicId, skill, requester: body.requester, scope: terms.scope, auditTrailTopicId: taskTopicId, status: "agreed" }));
+          registrySeq = reg.sequenceNumber;
+        }
+        return res.status(200).json({ taskTopicId, jobId: taskTopicId, initSeq: initRes.sequenceNumber, registrySeq, contentHrl, contentHash, init: JSON.parse(init) });
+      }
+
       // ── HCS-11: AGENT PROFILE ─────────────────────────────────
       case "createProfile": {
         const profileTopicId = await createTopic(client, `hcs-11:profile:${body.accountId}`, submitKey);
@@ -417,7 +477,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             "createSkillsRegistry / createVersionRegistry / registerSkill / registerVersion / uploadManifest",
             "trustScore",
             "createRfqBoard / rfqAnnounce / rfqPropose / rfqRespond / rfqComplete / rfqWithdraw / rfqList",
-            "createFlora / floraChat / floraRead",
+            "createFlora / floraChat / floraRead / ensureChatRoom / createTask",
             "createProfile",
             "reputationDeploy / reputationMint / reputationTransfer / reputationBurn / reputationBalance",
             "reputationVotingDeploy / voteGood / voteBad / removeVote / reputationScore",
