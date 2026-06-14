@@ -19,8 +19,9 @@ import {
 } from "../lib/hedera";
 import { loadState, saveState } from "../lib/state";
 import { initMars } from "../lib/agents";
-import { SKILLS, getSkill, negoScript, REQUESTER, AUDITOR } from "../lib/demo-skills";
+import { SKILLS, getSkill, requesterAsk, requesterAccept, REQUESTER, AUDITOR } from "../lib/demo-skills";
 import { loadDemoSkill } from "../lib/demo-skills-loader";
+import { generateAuditorQuote } from "../lib/auditor";
 
 // ── tiny ANSI helpers (terminal chat bubbles) ──────────────────────────────
 const C = { dim: "\x1b[2m", reset: "\x1b[0m", bold: "\x1b[1m", blue: "\x1b[34m", purple: "\x1b[35m", green: "\x1b[32m", red: "\x1b[31m", amber: "\x1b[33m" };
@@ -61,13 +62,17 @@ async function main() {
     console.log(`\n${C.amber}${C.bold}NEGOTIATION ROOM${C.reset}  ${C.dim}HCS-16${C.reset}  ${hashscan("topic", chatRoomTopicId)}`);
     console.log(`${C.dim}skill ${skill.name} · ${skill.ref} · expect ${skill.expect}${C.reset}\n`);
 
-    // 1) the simulated negotiation — each line is a real HCS message
-    for (const turn of negoScript(skill)) {
-      const r = await submitMessage(client, chatRoomTopicId, buildHCS16Chat(turn.from, "mars-chatroom", turn.text));
-      console.log(`  ${who(turn.from)} ${C.dim}${turn.from}${C.reset}   ${C.green}⛓ seq ${r.sequenceNumber}${C.reset}`);
-      console.log(`    ${turn.text}\n`);
+    // 1) the negotiation — each line is a real HCS message; only the auditor's quote is AI
+    const postTurn = async (from: string, text: string, tag = "") => {
+      const r = await submitMessage(client, chatRoomTopicId, buildHCS16Chat(from, "mars-chatroom", text));
+      console.log(`  ${who(from)} ${C.dim}${from}${C.reset}   ${C.green}⛓ seq ${r.sequenceNumber}${C.reset}${tag}`);
+      console.log(`    ${text}\n`);
       await sleep(700);
-    }
+    };
+    await postTurn(REQUESTER, requesterAsk(skill)); // scripted ask
+    const quote = await generateAuditorQuote(skill, requesterAsk(skill)); // OpenAI (auditor only)
+    await postTurn(AUDITOR, quote.text, `  ${C.dim}(${quote.source})${C.reset}`);
+    await postTurn(REQUESTER, requesterAccept()); // scripted accept
 
     // 2) accept → create the task topic; init carries skill content + agreed terms
     const loaded = loadDemoSkill(skill.ref);
