@@ -1,18 +1,21 @@
 import { useState } from "react";
-import { SKILLS } from "./marsData";
+import { useMars } from "./marsState";
 import { Eyebrow, SkillDetail, VerdictPill } from "./MarsUI";
 
 // Expanded Skills Verified — list of verified skills; click to see audit
 // history, version history and usage.
 
 export default function SkillsExpanded() {
-  const [sel, setSel] = useState(SKILLS[0].id);
-  const skill = SKILLS.find((s) => s.id === sel) ?? SKILLS[0];
+  const { state } = useMars();
+  const SKILLS = state.skills;
+  const [sel, setSel] = useState<string | null>(null);
+  const skill = (sel ? SKILLS.find((s) => s.id === sel) : null) ?? SKILLS[0] ?? null;
 
   return (
     <div style={{ display: "flex", height: "100%" }}>
       <div className="no-bar" style={{ width: 360, flex: "none", borderRight: "1px solid var(--hair)", overflow: "auto", padding: 18 }}>
         <Eyebrow color="var(--safe)">Verified skills · {SKILLS.length}</Eyebrow>
+        {!SKILLS.length && <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 14 }}>No verified skills yet.</div>}
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
           {SKILLS.map((s) => (
             <button
@@ -21,8 +24,8 @@ export default function SkillsExpanded() {
               style={{
                 textAlign: "left",
                 cursor: "pointer",
-                border: `1px solid ${s.id === sel ? "var(--ink-3)" : "var(--hair-soft)"}`,
-                background: s.id === sel ? "var(--inset)" : "transparent",
+                border: `1px solid ${s.id === skill?.id ? "var(--ink-3)" : "var(--hair-soft)"}`,
+                background: s.id === skill?.id ? "var(--inset)" : "transparent",
                 borderRadius: 8,
                 padding: "10px 11px",
                 display: "flex",
@@ -46,7 +49,7 @@ export default function SkillsExpanded() {
       </div>
       <div className="no-bar" style={{ flex: 1, minWidth: 0, overflow: "auto", padding: 28 }}>
         <div style={{ maxWidth: 560 }}>
-          <SkillDetail s={skill} />
+          {skill ? <SkillDetail s={skill} /> : <div style={{ fontSize: 13, color: "var(--ink-3)" }}>No verified skills yet.</div>}
         </div>
       </div>
     </div>
