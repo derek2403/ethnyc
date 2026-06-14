@@ -60,15 +60,17 @@ function statusOf(findings: AuditFinding[]): "pass" | "warn" | "fail" {
 export interface AuditTaskOpts {
   taskTopicId: string;
   skillRef: string;
+  files?: { name: string; content: string }[]; // author-submitted source (paste/upload/URL); else resolved from a demo ref
+  skillName?: string;
   registryTopicId?: string;
   onStage?: (s: AuditStageResult) => void;
   onVerdict?: (v: { verdict: string; risk: string; capabilities: string[] }) => void;
 }
 
 export async function auditTaskToHcs(client: Client, opts: AuditTaskOpts): Promise<AuditTaskResult> {
-  const { taskTopicId, skillRef, registryTopicId, onStage, onVerdict } = opts;
+  const { taskTopicId, skillRef, files, registryTopicId, onStage, onVerdict } = opts;
   const cfg = getSkill(skillRef);
-  const skillName = cfg?.name ?? skillRef.replace(/\.(js|json|md)$/i, "");
+  const skillName = opts.skillName ?? cfg?.name ?? skillRef.replace(/\.(js|json|md)$/i, "");
   const apiKey = process.env.OPENAI_API_KEY;
   const modelUsed = apiKey ? (process.env.AUDIT_MODEL || process.env.OPENAI_MODEL || DEFAULT_MODEL) : "deterministic";
 
@@ -86,7 +88,10 @@ export async function auditTaskToHcs(client: Client, opts: AuditTaskOpts): Promi
   if (apiKey) {
     // ── real pipeline ──────────────────────────────────────────────
     source = "openai";
-    const loaded = (resolveLocalDemoSkill(skillRef) as { name: string; files: { name: string; content: string }[] } | null) ?? { name: skillName, files: [] };
+    // Prefer author-submitted files; otherwise resolve a demo ref from disk.
+    const loaded = files?.length
+      ? { name: skillName, files }
+      : ((resolveLocalDemoSkill(skillRef) as { name: string; files: { name: string; content: string }[] } | null) ?? { name: skillName, files: [] });
     const result = (await runAuditPipeline({
       name: loaded.name,
       files: loaded.files,
