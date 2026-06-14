@@ -15,6 +15,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const jobId = Number(req.body?.jobId ?? 0);
     if (!jobId) return res.status(400).json({ error: "jobId required" });
+    // bond amount (base units, 6-dec USDC) — passed at post time so the UI sets it independently.
+    // Falls back to the amount already stored on the job (e.g. set via createJob/setTerms).
+    const bondArg = req.body?.bond != null ? BigInt(req.body.bond) : null;
 
     const account = privateKeyToAccount(getAgentKey());
     const pub = createPublicClient({ chain: arcTestnet, transport: http() });
@@ -27,18 +30,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
     if (job.bondPosted) return res.status(400).json({ error: "bond already posted" });
 
+    // the bond to lock = the explicit amount from the request, else the job's stored bond
+    const bond = bondArg != null && bondArg > 0n ? bondArg : job.bond;
+    if (bond <= 0n) return res.status(400).json({ error: "bond must be > 0 — pass a bond amount" });
+
     const bal = await pub.readContract({ address: USDC_ADDRESS, abi: USDC_ABI, functionName: "balanceOf", args: [account.address] });
-    if (bal < job.bond) return res.status(400).json({ error: "agent USDC balance too low for the bond" });
+    if (bal < bond) return res.status(400).json({ error: "agent USDC balance too low for the bond" });
 
     // one-time: approve the escrow to pull the agent's USDC
     const allowance = await pub.readContract({ address: USDC_ADDRESS, abi: USDC_ABI, functionName: "allowance", args: [account.address, ESCROW_ADDRESS] });
     let approveTx: string | undefined;
-    if (allowance < job.bond) {
+    if (allowance < bond) {
       approveTx = await wallet.writeContract({ address: USDC_ADDRESS, abi: USDC_ABI, functionName: "approve", args: [ESCROW_ADDRESS, parseUnits("1000", 6)] });
       await pub.waitForTransactionReceipt({ hash: approveTx as `0x${string}` });
     }
 
-    const tx = await wallet.writeContract({ address: ESCROW_ADDRESS, abi: ESCROW_ABI, functionName: "postBond", args: [BigInt(jobId)] });
+    const tx = await wallet.writeContract({ address: ESCROW_ADDRESS, abi: ESCROW_ABI, functionName: "postBond", args: [BigInt(jobId), bond] });
     await pub.waitForTransactionReceipt({ hash: tx });
     return res.status(200).json({ ok: true, tx, approveTx });
   } catch (err: unknown) {
