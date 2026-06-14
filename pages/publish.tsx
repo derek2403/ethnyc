@@ -92,8 +92,8 @@ export default function Publish() {
   const [demoRef, setDemoRef] = useState(DEMO_SKILLS[0].ref);
 
   // advanced (sensible defaults — hidden by default)
-  const [fee, setFee] = useState("1");
-  const [bond, setBond] = useState("0.5");
+  const [fee, setFee] = useState("0.1");
+  const [bond, setBond] = useState("0.05");
   const [hederaId, setHederaId] = useState("");
   const [regAmt, setRegAmt] = useState("0.2");
 
