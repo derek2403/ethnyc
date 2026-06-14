@@ -149,7 +149,7 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
     // STEP 2 — RUN THE AUDITING PROCEDURE (the REAL pipeline, OpenAI per stage)
     // ════════════════════════════════════════════════════════════════════════
     const auditId = "audit-" + createHash("sha256").update(name + Date.now()).digest("hex").slice(0, 6);
-    startAudit({ auditId, skill: name, agentId: requester, model, files: files.map((f) => f.name) });
+    startAudit({ auditId, skill: name, agentId: requester, auditor: AUDITOR, model, files: files.map((f) => f.name) });
     w(`${C.cyan}${C.bold}AUDIT${C.reset}  ${C.dim}${auditId} · model ${model}${C.reset}`);
 
     const result = await runAuditPipeline({
