@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Popout from "./Popout";
 import AgentRegister from "./AgentRegister";
 import { useMars } from "./marsState";
@@ -97,7 +97,7 @@ function AgentCard({ a }: { a: ConnectedAgent }) {
         <span style={{ fontSize: 8.5, fontWeight: 600, color: roleColor, background: roleTint, padding: "2px 7px", borderRadius: 999, textTransform: "uppercase", letterSpacing: ".07em", flex: "none" }}>{a.role}</span>
         {a.verified && <span title={a.humanId ?? "World ID verified"} style={{ fontSize: 8.5, fontWeight: 600, color: "var(--safe)", background: "rgba(31,157,99,0.1)", padding: "2px 7px", borderRadius: 999, letterSpacing: ".04em", flex: "none" }}>✓ World</span>}
         <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--ink-2)", flex: "none" }}>★ {a.rating.toFixed(1)}</span>
+        <span style={{ fontSize: 10.5, fontWeight: 600, color: a.rating > 0 ? "var(--ink-2)" : "var(--ink-3)", flex: "none" }}>{a.rating > 0 ? `★ ${a.rating.toFixed(1)}` : "unrated"}</span>
         <a href={hashscanAccount(a.id)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 9.5, fontWeight: 500, color: "var(--mars)", flex: "none", textDecoration: "none" }}>explorer ↗</a>
       </div>
 
@@ -192,6 +192,12 @@ export default function ConnectAgent() {
   const [loggingIn, setLoggingIn] = useState(false);
   const [loginErr, setLoginErr] = useState<string | null>(null);
 
+  // Track the current session id + a brief suppression window after Disconnect, so
+  // the /api/session poll doesn't re-adopt an agent we just logged out of.
+  const sessionIdRef = useRef<string | null>(null);
+  sessionIdRef.current = session?.id ?? null;
+  const suppressUntil = useRef(0);
+
   useEffect(() => {
     if (typeof window !== "undefined") setBase(window.location.origin);
   }, []);
@@ -235,7 +241,35 @@ export default function ConnectAgent() {
     setLoginErr(null);
     if (typeof window !== "undefined") localStorage.removeItem(SESSION_KEY);
     setMode("home");
+    suppressUntil.current = Date.now() + 5000; // ignore session polls while the clear lands
+    fetch("/api/session?clear=1").catch(() => {});
   };
+
+  // Bridge: poll the server-side portal session. A CLI `curl /api/login` or
+  // `register-cli` records the active agent there, so logging in from the terminal
+  // logs you into the browser portal too (adopted within a couple seconds).
+  useEffect(() => {
+    let alive = true;
+    const poll = async () => {
+      if (Date.now() < suppressUntil.current) return;
+      try {
+        const r = await fetch("/api/session");
+        const d = await r.json();
+        const aid = d?.agent_id || null;
+        if (alive && aid && aid !== sessionIdRef.current) login(aid);
+      } catch {
+        /* ignore */
+      }
+    };
+    poll();
+    const iv = setInterval(poll, 2500);
+    return () => {
+      alive = false;
+      clearInterval(iv);
+    };
+    // login uses only stable setters; safe to omit from deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const connected = state.users.length + state.auditors.length;
 
