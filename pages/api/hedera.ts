@@ -87,6 +87,7 @@ import { loadDemoSkill } from "@/lib/demo-skills-loader";
 import { getSkill } from "@/lib/demo-skills";
 import { generateAuditorQuote } from "@/lib/auditor";
 import { auditTaskToHcs, finalizeTaskToHcs } from "@/lib/audit-task";
+import { savePremiumSkill } from "@/lib/db.mjs";
 
 export const config = {
   api: { bodyParser: { sizeLimit: "5mb" } }, // audit reports / manifests can be large
@@ -146,7 +147,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(200).json(await createVerifiedCollection(client, body.name, body.symbol));
       }
       case "createLicenseCollection": {
-        return res.status(200).json(await createLicenseCollection(client, { name: body.name, symbol: body.symbol }));
+        // optional author royalty: pass royaltyCollectorAccountId + numerator/denominator
+        return res.status(200).json(await createLicenseCollection(client, {
+          name: body.name, symbol: body.symbol,
+          royaltyCollectorAccountId: body.royaltyCollectorAccountId,
+          numerator: body.numerator, denominator: body.denominator, fallbackHbar: body.fallbackHbar,
+        }));
       }
       case "mintNft": {
         // metadata encodes the skill + version so checkNft can read it back (≤100 bytes)
@@ -415,6 +421,74 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         );
       }
 
+      // ── /publish: author publishes a PREMIUM (royalty-bearing) verified skill ──
+      // Runs AFTER a SAFE verdict + the Arc escrow has been released on-chain. Mints the
+      // VERIFIED NFT (reusing finalizeTask), creates a Hedera license collection carrying a
+      // real author CustomRoyaltyFee, and records the premium skill in db/skills.json.
+      case "publishPremiumSkill": {
+        const skill: string = body.skill;
+        const author = body.author || {}; // { hederaId, evm, humanId }
+        const royaltyPct = Math.max(1, Math.min(99, Math.round(Number(body.royaltyPct ?? 10))));
+        if (body.verdict !== "SAFE") return res.status(400).json({ error: "premium publish requires a SAFE verdict" });
+        if (!skill) return res.status(400).json({ error: "skill required" });
+        if (!/^0\.0\.\d+$/.test(String(author.hederaId || ""))) {
+          return res.status(400).json({ error: "author.hederaId (0.0.x) required for the royalty collector" });
+        }
+
+        // 1) VERIFIED NFT + decision/review + main-registry update (reuse the chatroom finalizer)
+        const finalize = await finalizeTaskToHcs(client, {
+          taskTopicId: body.taskTopicId,
+          skill,
+          verdict: "SAFE",
+          approve: true,
+          rating: body.rating,
+          comment: body.comment ?? "Premium skill — author self-published, clean audit.",
+          requester: author.hederaId,
+          auditor: body.auditor || getOperatorId(),
+          reviewTopicId: body.reviewTopicId,
+          votingTopicId: body.votingTopicId,
+          registryTopicId: body.registryTopicId,
+          mintToAccountId: author.hederaId,
+        });
+
+        // 2) premium LICENSE collection with the author's real CustomRoyaltyFee
+        const license = await createLicenseCollection(client, {
+          name: `MARS Premium · ${skill}`.slice(0, 100),
+          symbol: "MARSP",
+          royaltyCollectorAccountId: author.hederaId,
+          numerator: royaltyPct,
+          denominator: 100,
+          fallbackHbar: 1,
+        });
+
+        // 3) persist the premium skill (source loaded server-side, authoritative)
+        const loaded = loadDemoSkill(body.skillRef ?? skill);
+        const files = loaded.source ? [{ name: loaded.name || skill, content: loaded.source }] : [];
+        const fileSha256 = createHash("sha256").update(loaded.source || skill).digest("hex");
+        const record = savePremiumSkill({
+          skill,
+          files,
+          author: { hederaId: author.hederaId, evm: author.evm ?? null, humanId: author.humanId ?? null },
+          royaltyPct,
+          price: body.price ?? null,
+          escrowJobId: body.escrowJobId ?? null,
+          licenseTokenId: license.tokenId,
+          verifiedTokenId: finalize.mint?.tokenId ?? null,
+          auditId: body.auditId ?? null,
+          fileSha256,
+        });
+
+        return res.status(200).json({
+          ok: true,
+          skill,
+          premium: true,
+          royaltyPct,
+          verified: finalize.mint ?? null,
+          license, // { tokenId, name, symbol, royalty:{ collector, numerator, denominator, fallbackHbar } }
+          record,
+        });
+      }
+
       // ── HCS-11: AGENT PROFILE ─────────────────────────────────
       case "createProfile": {
         const profileTopicId = await createTopic(client, `hcs-11:profile:${body.accountId}`, submitKey);
@@ -519,7 +593,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             "createSkillsRegistry / createVersionRegistry / registerSkill / registerVersion / uploadManifest",
             "trustScore",
             "createRfqBoard / rfqAnnounce / rfqPropose / rfqRespond / rfqComplete / rfqWithdraw / rfqList",
-            "createFlora / floraChat / floraRead / ensureChatRoom / auditorReply / createTask / runAudit / finalizeTask",
+            "createFlora / floraChat / floraRead / ensureChatRoom / auditorReply / createTask / runAudit / finalizeTask / publishPremiumSkill",
             "createProfile",
             "reputationDeploy / reputationMint / reputationTransfer / reputationBurn / reputationBalance",
             "reputationVotingDeploy / voteGood / voteBad / removeVote / reputationScore",
