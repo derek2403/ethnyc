@@ -21,6 +21,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     "X-Accel-Buffering": "no",
   });
   const send = (obj: unknown) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+  // SSE heartbeat — Cloudflare's proxied edge drops a connection that's idle for ~100s, but
+  // we silently `await pollAgentBook(..., 180_000)` while the human scans the QR. A comment
+  // ping every 15s keeps bytes flowing so the stream survives the scan. (Client ignores it:
+  // `: ping` fails JSON.parse → caught/continue in pages/hedera.tsx.)
+  const heartbeat = setInterval(() => res.write(": ping\n\n"), 15_000);
+  req.on("close", () => clearInterval(heartbeat));
 
   const client = getClient();
   try {
@@ -86,7 +92,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         account_memo: result.accountMemo,
         registry_seq: result.registrySeq ?? null,
         encrypted_key: result.encryptedKey ?? null,
-        rating: "5.0",
+        rating: null,
         hedera: true,
         registered_at: new Date().toISOString(),
       });
@@ -96,6 +102,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (error: unknown) {
     send({ type: "error", error: error instanceof Error ? error.message : "Unknown error" });
   } finally {
+    clearInterval(heartbeat);
     client.close();
     res.end();
   }

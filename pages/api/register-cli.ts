@@ -9,7 +9,7 @@ import { getClient, hashscan, createAgentAccount } from "@/lib/hedera";
 import { checkAgentHuman } from "@/lib/world-agentkit";
 import { getAgentBookVerifyLink, pollAgentBook } from "@/lib/agentbook";
 import { initMars, registerAgent } from "@/lib/agents";
-import { saveAgent } from "@/lib/db.mjs";
+import { saveAgent, setSession } from "@/lib/db.mjs";
 
 export const config = { api: { responseLimit: false }, maxDuration: 300 };
 
@@ -99,10 +99,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       account_memo: a.accountMemo,
       registry_seq: a.registrySeq ?? null,
       encrypted_key: a.encryptedKey ?? null,
-      rating: "5.0",
+      rating: null, // unrated until reviewed (auditors earn a rating from requester reviews)
       hedera: true,
       registered_at: new Date().toISOString(),
     });
+
+    // bridge to the browser portal: it polls /api/session and logs in to this agent
+    setSession(a.account);
 
     w("\n✓ registered");
     w(`  account ${a.account}`);
@@ -110,7 +113,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     w(`  review  ${a.reviewTopicId}`);
     w(`  profile ${a.profileTopicId}`);
     w(`  world   ${a.worldVerified ? `verified (${a.humanId})` : "unverified"}`);
-    w(`\n  export MARS_AGENT_ID=${a.account} MARS_REVIEW_ID=${a.reviewTopicId} MARS_RATING=5.0 MARS_ROLE=${role}\n`);
+    w(`\n  export MARS_AGENT_ID=${a.account} MARS_REVIEW_ID=${a.reviewTopicId} MARS_ROLE=${role}\n`);
   } catch (e: unknown) {
     w(`\nERROR: ${e instanceof Error ? e.message : "registration failed"}`);
   } finally {

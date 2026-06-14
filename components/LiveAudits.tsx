@@ -224,7 +224,7 @@ export default function LiveAudits() {
               <polyline points="2 12 6 12 9 4 14 20 17 12 22 12" />
             </svg>
             <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink)" }}>
-              Live Audits
+              Recent Audits
             </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

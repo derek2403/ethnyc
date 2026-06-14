@@ -1,0 +1,37 @@
+# MARS web app — runs as a container on the shared `proxy` network so the existing
+# ~/nginx-proxy container can reach it by name (http://mars:3000), exactly like gym/enclave.
+#
+# Bring it up from the project dir:   docker compose up -d --build
+#
+# PREREQ before `up` (these are gitignored → rsync them in first; they are bind-mounted):
+#   .env.local  mars-state.json  db/  skills/   ← must already exist on disk
+# If mars-state.json / db / skills are MISSING when you `up`, Docker will create empty
+# DIRECTORIES in their place and the app will misbehave. rsync first, then up.
+
+services:
+  mars:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mars-web
+    container_name: mars
+    restart: always
+    expose:
+      - "3000"            # the app's internal port
+    # mars owns host :3000. gym was moved off 3000 → 3001 to free it (see steps).
+    # The Cloudflare Tunnel points mars.derek2403.win → http://localhost:3000.
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./db:/app/db                              # read-write JSON data store
+      - ./skills:/app/skills                      # verified-skill artifacts (read-write)
+      - ./mars-state.json:/app/mars-state.json    # seeded HCS topic/token ids
+      - ./.env.local:/app/.env.local:ro           # server-only secrets, read at runtime by Next
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    # Created by ~/nginx-proxy/docker-compose.yml. We only JOIN it here.
+    name: proxy
+    external: true

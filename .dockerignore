@@ -1,0 +1,20 @@
+# Keep the build context small + correct.
+# IMPORTANT: do NOT ignore .env.local — the builder needs it to inline NEXT_PUBLIC_* vars.
+# IMPORTANT: do NOT ignore demo/ — getStaticProps reads demo/skills at build time.
+
+node_modules
+.next
+.git
+.gitignore
+
+# Runtime data — bind-mounted at runtime, must not be baked into the image layers.
+db
+skills
+
+# build artifacts / noise
+*.tsbuildinfo
+npm-debug.log*
+.DS_Store
+.vercel
+out
+build

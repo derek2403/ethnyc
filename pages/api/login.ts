@@ -1,8 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { getAgent } from "@/lib/db.mjs";
+import { getAgent, setSession } from "@/lib/db.mjs";
 
 // GET/POST /api/login?agent=<agent_id> — a CLI login: loads the agent's saved
-// record (account, topics, rating, role) from db/users.json|auditors.json.
+// record (account, topics, rating, role) from db/users.json|auditors.json AND
+// marks it as the active portal session, so the browser logs in to it too.
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cache-Control", "no-store");
@@ -12,6 +13,9 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
   const rec = getAgent(id);
   if (!rec) return res.status(404).json({ error: `agent "${id}" not found — register first` });
+
+  // bridge: the browser portal polls /api/session and will adopt this agent
+  setSession(rec.agent_id);
 
   return res.status(200).json({
     ok: true,
