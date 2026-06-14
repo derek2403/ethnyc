@@ -12,6 +12,7 @@ export interface MarsState {
   chatRoomTopicId?: string; // the one global HCS-16 negotiation room (communication topic)
   chatFloraId?: string; // label used in HCS-16 operator_id (`sender@<floraId>`)
   verifiedTokenId?: string; // the HTS VERIFIED NFT collection (minted to a skill that passes + is approved)
+  lastRunKickoff?: number; // epoch ms of the last async /api/run-task kickoff (so /api/run-status finds that run)
 }
 
 export function loadState(): MarsState {

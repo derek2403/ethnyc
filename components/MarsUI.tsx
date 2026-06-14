@@ -305,7 +305,28 @@ export function AuditDetail({ a }: { a: Audit }) {
         </div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10, background: "var(--panel)", border: "1px solid var(--hair-soft)", borderRadius: 10, padding: "12px 14px" }}>
-        <Row label="HCS audit-trail topic" value={a.topic} />
+        <Row
+          label="HCS audit-trail topic"
+          value={
+            /^0\.0\.\d+$/.test(a.topic) ? (
+              <a href={`https://hashscan.io/testnet/topic/${a.topic}`} target="_blank" rel="noopener noreferrer" style={{ color: "var(--comm)", textDecoration: "none", fontFamily: "var(--code)" }}>
+                {a.topic} ↗
+              </a>
+            ) : (
+              a.topic
+            )
+          }
+        />
+        {a.chatRoom && (
+          <Row
+            label="Negotiation room · HCS-16"
+            value={
+              <a href={`https://hashscan.io/testnet/topic/${a.chatRoom}`} target="_blank" rel="noopener noreferrer" style={{ color: "var(--comm)", textDecoration: "none", fontFamily: "var(--code)" }}>
+                {a.chatRoom} ↗
+              </a>
+            }
+          />
+        )}
         <Row label="Recorded" value={a.date} />
       </div>
       <div>

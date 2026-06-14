@@ -18,6 +18,7 @@
 //   skill     — local path | demo name | npm package | github raw url (the MCP/skill to audit)
 import type { NextApiRequest, NextApiResponse } from "next";
 import { runTaskFlow } from "@/lib/task-flow";
+import { saveState } from "@/lib/state";
 
 // The real audit + Hedera round-trips take a while (OpenAI stages + several HCS submits +
 // an NFT mint), so disable Next's response size limit and allow up to 5 minutes.
@@ -29,6 +30,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const q = req.method === "POST" ? { ...req.query, ...(req.body ?? {}) } : req.query;
   const agentId = String(q.agent_id ?? q.agentId ?? "").trim();
   const skillRef = String(q.skill ?? q.ref ?? q.package ?? "").trim();
+
+  // ── ASYNC mode (?async=1): kick the flow off in the background and return immediately.
+  // Progress lands live in db/audits.json — poll /api/run-status to watch the stages. This
+  // is for agents (like Hermes) whose tool UI buffers a single long call's output: they
+  // poll instead, so each short poll renders as the stages complete.
+  if (q.async === "1" || q.async === "true") {
+    if (!skillRef) return res.status(400).json({ error: "pass ?skill=…" });
+    saveState({ lastRunKickoff: Date.now() }); // marker so /api/run-status finds THIS run
+    runTaskFlow({ agentId, skillRef, color: false, write: () => {} }).catch((e) =>
+      console.error("async run-task failed:", e instanceof Error ? e.message : e)
+    );
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).json({ ok: true, started: true, skill: skillRef, poll: "/api/run-status", note: "audit running in the background — poll /api/run-status every few seconds for live stages" });
+  }
 
   // Stream plain text: no caching, no proxy buffering, so `curl -N` shows lines live.
   res.writeHead(200, {

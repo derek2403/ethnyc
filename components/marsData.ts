@@ -79,6 +79,7 @@ export interface Audit {
   escrow: string;
   bond: string;
   topic: string;
+  chatRoom?: string | null;
   date: string;
   steps: AuditStep[];
   // final synthesizer output (optional — present once audited)

@@ -242,7 +242,7 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
     // used as job_posted's jobId + auditTrailTopicId). So audits.json keys directly to the
     // replayable HCS trail — no separate random id.
     const auditId = taskTopicId;
-    startAudit({ auditId, skill: name, agentId: requester, auditor: AUDITOR, model, files: files.map((f) => f.name) });
+    startAudit({ auditId, skill: name, agentId: requester, auditor: AUDITOR, model, files: files.map((f) => f.name), chatRoom: chatRoomTopicId });
     // NOTE: `model` is kept ONLY internally (the OpenAI call + the off-chain audits.json log).
     // It is deliberately NOT shown to the user and NOT written to HCS — the on-chain record is
     // model-agnostic (the verdict + evidence stand on their own, regardless of which LLM produced them).
