@@ -84,7 +84,7 @@ import { checkAgentHuman } from "@/lib/world-agentkit";
 import { registerAgent as registerAgentFlow, initMars } from "@/lib/agents";
 import { loadState, saveState } from "@/lib/state";
 import { loadDemoSkill } from "@/lib/demo-skills-loader";
-import { getSkill } from "@/lib/demo-skills";
+import { getSkill, SKILL_DESCRIPTIONS } from "@/lib/demo-skills";
 import { generateAuditorQuote } from "@/lib/auditor";
 import { auditTaskToHcs, finalizeTaskToHcs } from "@/lib/audit-task";
 
@@ -351,8 +351,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const contentHash = createHash("sha256").update(source).digest("hex");
         const terms = {
           skill,
+          description: SKILL_DESCRIPTIONS[skillRef] ?? body.description, // what the skill CLAIMS to do
+          files: loaded.files, // the file(s) submitted for audit
           scope: body.scope ?? "network · keys · wallet",
-          requester: body.requester,
+          requester: body.requester, // = the payer
           auditor: body.auditor,
           price: body.price ?? "—",
           bond: body.bond ?? "—",

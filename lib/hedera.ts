@@ -1176,11 +1176,13 @@ export interface TaskInit {
   skill: string; // skill name (e.g. "price-checker")
   content: string; // the skill source, OR an hcs://1/<id> HRL when too large
   scope: string; // what to check (e.g. "network · keys · wallet")
-  requester: string; // the agent that posted the ask
+  requester: string; // the agent that posted the ask (= the payer)
   auditor: string; // the agent that won the quote
   price: string; // accepted quote (audit fee → escrow)
   bond: string; // auditor's honesty bond
   time: string; // agreed turnaround (e.g. "~10m")
+  description?: string; // the skill's DECLARED description (what it claims to do)
+  files?: string[]; // the file(s) submitted for audit
   version?: string;
   tier?: string; // T1 / T2 / automated / SOC2 …
   compliance?: string;
@@ -1190,19 +1192,23 @@ export interface TaskInit {
   m?: string;
 }
 
-/** Build the `mars-task` init message — "all the required stuff as the data field". */
+/** Build the `mars-task` init message — the job manifest: WHO (payer + auditor), WHAT (skill +
+ *  description + files + content), the SCOPE, and the agreed TERMS. */
 export function buildTaskInit(t: TaskInit): string {
   return JSON.stringify({
     p: "mars-task",
     op: "init",
     skill: t.skill,
     ...(t.version && { version: t.version }),
+    ...(t.description && { description: t.description }),
     content: t.content,
     ...(t.contentHrl && { content_hrl: t.contentHrl }),
     ...(t.contentHash && { content_hash: t.contentHash }),
+    ...(t.files?.length && { files: t.files }),
     scope: t.scope,
     ...(t.tier && { tier: t.tier }),
     ...(t.compliance && { compliance: t.compliance }),
+    payer: t.requester, // WHO pays the audit fee (escrow) — explicit alias for the requester
     requester: t.requester,
     auditor: t.auditor,
     price: t.price,

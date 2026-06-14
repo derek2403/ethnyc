@@ -19,7 +19,7 @@ import {
 } from "../lib/hedera";
 import { loadState, saveState } from "../lib/state";
 import { initMars } from "../lib/agents";
-import { SKILLS, getSkill, requesterAsk, requesterAccept, REQUESTER, AUDITOR, AUDITOR_REVIEW_TOPIC, AUDITOR_VOTING_TOPIC } from "../lib/demo-skills";
+import { SKILLS, getSkill, requesterAsk, requesterAccept, REQUESTER, AUDITOR, AUDITOR_REVIEW_TOPIC, AUDITOR_VOTING_TOPIC, SKILL_DESCRIPTIONS } from "../lib/demo-skills";
 import { loadDemoSkill } from "../lib/demo-skills-loader";
 import { generateAuditorQuote } from "../lib/auditor";
 import { auditTaskToHcs, finalizeTaskToHcs } from "../lib/audit-task";
@@ -80,7 +80,8 @@ async function main() {
     const source = loaded.source;
     const contentHash = createHash("sha256").update(source).digest("hex");
     const terms = {
-      skill: skill.name, scope: skill.scope, requester: REQUESTER, auditor: AUDITOR,
+      skill: skill.name, description: SKILL_DESCRIPTIONS[skill.ref], files: loaded.files,
+      scope: skill.scope, requester: REQUESTER, auditor: AUDITOR,
       price: skill.price, bond: skill.bond, time: skill.time, version: skill.version,
       tier: skill.tier, compliance: skill.compliance, contentHash, chatRoomTopicId,
       m: quote.text, // the auditor's quote → nego record on the task topic

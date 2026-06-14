@@ -8,7 +8,7 @@ import { join, relative, basename } from "node:path";
 
 const SKILL_TEXT_EXT = /\.(md|markdown|js|mjs|cjs|ts|json|py|txt|ya?ml|toml|sh)$/i;
 
-export function loadDemoSkill(ref: string): { name: string; source: string } {
+export function loadDemoSkill(ref: string): { name: string; source: string; files: string[] } {
   const safe = basename(String(ref || "")).replace(/[^A-Za-z0-9._@-]/g, "");
   const root = join(process.cwd(), "demo", "skills");
   let target = "";
@@ -16,9 +16,9 @@ export function loadDemoSkill(ref: string): { name: string; source: string } {
     const p = join(root, c);
     if (safe && existsSync(p)) { target = p; break; }
   }
-  if (!target) return { name: safe.replace(/\.[^.]+$/, ""), source: "" };
+  if (!target) return { name: safe.replace(/\.[^.]+$/, ""), source: "", files: [] };
   const name = basename(target).replace(/\.[^.]+$/, "");
-  if (!statSync(target).isDirectory()) return { name, source: readFileSync(target, "utf8") };
+  if (!statSync(target).isDirectory()) return { name, source: readFileSync(target, "utf8"), files: [basename(target)] };
 
   const files: { rel: string; content: string }[] = [];
   const walk = (dir: string) => {
@@ -33,5 +33,5 @@ export function loadDemoSkill(ref: string): { name: string; source: string } {
   };
   walk(target);
   files.sort((a, b) => (a.rel === "SKILL.md" ? -1 : b.rel === "SKILL.md" ? 1 : a.rel.localeCompare(b.rel)));
-  return { name, source: files.map((f) => `=== ${f.rel} ===\n${f.content}`).join("\n").slice(0, 8000) };
+  return { name, source: files.map((f) => `=== ${f.rel} ===\n${f.content}`).join("\n").slice(0, 8000), files: files.map((f) => f.rel) };
 }
