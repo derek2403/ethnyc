@@ -236,6 +236,38 @@ AGENT IDENTITY           HCS-11 profile + HCS-14 universal agent id, per auditor
 
 ---
 
+## ✅ Implemented (this build) — Hedera module + agent-registration flow
+
+A working Hedera-testnet implementation lives in `lib/`, `pages/api/`, `pages/hedera.tsx`, and `scripts/`. Hand-rolled JSON envelopes + Mirror Node reads (DIVE/SPARK style), `@hashgraph/sdk` only.
+
+### The headline flow — register an agent
+1. **Create a Hedera account** → take its **EVM address**.
+2. **Register that EVM in World AgentBook** via the official `npx @worldcoin/agentkit-cli register <evm>` → scan the QR with the World App → poll AgentBook (`checkAgentHuman`) until it resolves to a human.
+3. **Finish the agent** → it gets its **own** voting HCS + review HCS + HCS-11 profile; the profile is bound to the account memo (`hcs-11:hcs://1/<topic>`); the key is stored **AES-256-GCM encrypted**; and an `agent_registered` entry (with `world_verified` + `human_id`) is logged into the **seeded main HCS registry**.
+
+Topic structure: **one seeded main HCS** (the append-only history of `agent_registered`) → **per agent: account + profile + voting + review topics**.
+
+### Run it
+- **Web:** `npm run dev` → `/hedera` → **⚡ Generate** an agent → the AgentBook QR renders on the page → scan → it finishes; then **👍/👎 vote** + **review** any agent (each on that agent's own HCS).
+- **CLI / Claude Code skill:** `npx tsx scripts/register-agent.ts auditor` (or `/register-agent auditor`) → renders the verify QR in the terminal, polls every 3s, finishes.
+
+### Where it lives
+| File | What |
+|---|---|
+| `lib/hedera.ts` | client · account · HTS NFTs · HCS-1/2/11/14/16/18/20/25/26 builders · reputation/voting/reviews + main-registry replay · audit trail · scheduled re-audit |
+| `lib/agents.ts` | `registerAgent` (the flow above) + `initMars` (seeded main registry) |
+| `lib/agentbook.ts` | World AgentBook registration via `@worldcoin/agentkit-cli` + poll |
+| `lib/encrypt.ts` · `lib/state.ts` | AES-256-GCM agent-key encryption · seeds the main registry to `mars-state.json` |
+| `pages/api/hedera.ts` | one `POST { action, … }` route exposing every capability |
+| `pages/api/register-agent-stream.ts` | SSE stream: account → AgentBook (scan) → finish, step by step |
+| `pages/hedera.tsx` | the demo UI |
+| `scripts/` + `.claude/skills/register-agent` | the register-agent CLI (`new-account` + `finish-agent`) + Claude Code skill |
+
+### Env (`.env.local`)
+`HEDERA_OPERATOR_ID`, `HEDERA_OPERATOR_KEY` (always); `NEXT_PUBLIC_WORLD_APP_ID`, `NEXT_PUBLIC_RP_ID`, `RP_SIGNING_KEY` for the World AgentBook scan.
+
+---
+
 ## 7. Tech Stack
 
 | Layer | Tools |
