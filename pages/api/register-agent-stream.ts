@@ -5,7 +5,8 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { getClient, createAgentAccount } from "@/lib/hedera";
 import { checkAgentHuman } from "@/lib/world-agentkit";
 import { getAgentBookVerifyLink, pollAgentBook } from "@/lib/agentbook";
-import { registerAgent } from "@/lib/agents";
+import { registerAgent, initMars } from "@/lib/agents";
+import { saveAgent } from "@/lib/db.mjs";
 
 export const config = { api: { responseLimit: false }, maxDuration: 300 };
 
@@ -27,7 +28,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // 1) create the Hedera account → EVM address
     send({ type: "step", step: "account", status: "running", label: "create Hedera account" });
-    const acct = await createAgentAccount(client, 5);
+    const acct = await createAgentAccount(client, 1);
     send({ type: "step", step: "account", status: "done", label: "account", id: acct.accountId });
 
     // 2) register the EVM address in World AgentBook (the UI renders the scan link as a QR)
@@ -48,12 +49,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       send({ type: "step", step: "agentbook", status: "done", label: world.worldVerified ? "registered in AgentBook" : "AgentBook unverified", id: world.humanId ?? undefined });
     }
 
+    // ensure the shared main registry exists (seed once, reuse via mars-state.json)
+    let registryTopicId = b.registryTopicId;
+    if (!registryTopicId) {
+      const m = await initMars(client);
+      registryTopicId = m.registryTopicId;
+    }
+
     // 3) finish the Hedera registration (voting/review/profile/memo/main-HCS log) — streams each step
+    const role = b.role === "auditor" ? "auditor" : "user";
     const result = await registerAgent(
       client,
       {
-        registryTopicId: b.registryTopicId,
-        role: b.role,
+        registryTopicId,
+        role,
         accountId: acct.accountId,
         accountKey: acct.privateKey,
         evmAddress: acct.evmAddress,
@@ -62,6 +71,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
       (s) => send({ type: "step", ...s })
     );
+
+    // persist to the same store the curl path / dashboard read from
+    try {
+      saveAgent(role, {
+        agent_id: result.account,
+        evm_address: result.evmAddress ?? null,
+        role,
+        world_verified: result.worldVerified,
+        human_id: result.humanId ?? null,
+        profile_topic: result.profileTopicId,
+        voting_topic: result.votingTopicId,
+        review_topic: result.reviewTopicId,
+        account_memo: result.accountMemo,
+        registry_seq: result.registrySeq ?? null,
+        encrypted_key: result.encryptedKey ?? null,
+        rating: "5.0",
+        hedera: true,
+        registered_at: new Date().toISOString(),
+      });
+    } catch {}
+
     send({ type: "done", result });
   } catch (error: unknown) {
     send({ type: "error", error: error instanceof Error ? error.message : "Unknown error" });
