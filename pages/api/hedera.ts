@@ -23,6 +23,7 @@ import {
   createVerifiedCollection,
   createLicenseCollection,
   mintNft,
+  checkNft,
   associateToken,
   transferNft,
   // HCS-1 files
@@ -67,9 +68,9 @@ import {
   buildReview,
   computeReviews,
   // main registry (orchestration)
-  buildAgentRegistered,
   buildJobPosted,
   buildJobUpdated,
+  buildHumanVerified,
   computeRegistry,
   // audit trail + schedule
   buildAuditStep,
@@ -77,6 +78,8 @@ import {
   scheduleReAudit,
 } from "@/lib/hedera";
 import { checkAgentHuman } from "@/lib/world-agentkit";
+import { registerAgent as registerAgentFlow, initMars } from "@/lib/agents";
+import { loadState, saveState } from "@/lib/state";
 
 export const config = {
   api: { bodyParser: { sizeLimit: "5mb" } }, // audit reports / manifests can be large
@@ -114,6 +117,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const world = await worldCheck(body.worldAddress ?? acct.evmAddress); // anti-sybil
         return res.status(200).json({ ...acct, ...world });
       }
+      case "worldCheck": {
+        // run the World agentkit lookup on any address: is it human-backed in AgentBook?
+        return res.status(200).json({ address: body.address, ...(await worldCheck(body.address)) });
+      }
 
       // ── GENERIC TOPIC ─────────────────────────────────────────
       case "createTopic": {
@@ -135,7 +142,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(200).json(await createLicenseCollection(client, { name: body.name, symbol: body.symbol }));
       }
       case "mintNft": {
-        return res.status(200).json(await mintNft(client, body.tokenId, body.metadata));
+        // metadata encodes the skill + version so checkNft can read it back (≤100 bytes)
+        const metadata = body.metadata ?? JSON.stringify({ skill: body.skill, version: body.version, ...(body.reportHrl && { report: body.reportHrl }) });
+        const minted = await mintNft(client, body.tokenId, metadata);
+        return res.status(200).json({ ...minted, metadata });
+      }
+      case "checkNft": {
+        // "do we have an NFT for this version, who owns it, what skill is it?"
+        return res.status(200).json(await checkNft(body.tokenId, { serial: body.serial, account: body.account, version: body.version }));
       }
       case "associateToken": {
         const key = PrivateKey.fromStringDer(body.accountKey);
@@ -172,32 +186,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const topicId = await createTopic(client, hcs2Memo(), submitKey);
         return res.status(200).json({ topicId, memo: hcs2Memo() });
       }
+      case "initMars": {
+        // ensures all shared infra (seeded to mars-state.json + reused): registry + voting + reviews
+        return res.status(200).json(await initMars(client, { force: body.force }));
+      }
+      case "getMars": {
+        // the seeded main-registry ids (or {} if not seeded yet) — lets the UI run setup as discrete steps
+        return res.status(200).json(loadState());
+      }
+      case "saveMars": {
+        // persist the seeded infra ids after the UI created them step-by-step
+        return res.status(200).json(saveState({ registryTopicId: body.registryTopicId, votingTopicId: body.votingTopicId, reviewTopicId: body.reviewTopicId }));
+      }
       case "registerAgent": {
-        // create account if none given → World ID agentkit check → HCS-11 profile sub-topic → log into main registry
-        let account = body.accountId;
-        let created = null;
-        if (!account) {
-          created = await createAgentAccount(client, body.initialBalance ?? 5);
-          account = created.accountId;
-        }
-        // anti-sybil: is this user/auditor agent human-backed? (README §World ID)
-        const world = await worldCheck(body.worldAddress ?? created?.evmAddress);
-        const profileTopicId = await createTopic(client, `hcs-11:profile:${account}`, submitKey);
-        await submitMessage(
-          client,
-          profileTopicId,
-          buildHCS11Profile(body.name ?? "agent", account, body.capabilities ?? [1, 2, 11, 16, 18, 20], body.model ?? "mars-v1", {
+        // full agent onboarding (account + World + profile + memo + registry + encrypted key) — lib/agents
+        return res.status(200).json(
+          await registerAgentFlow(client, {
+            registryTopicId: body.registryTopicId,
+            role: body.role,
             bio: body.bio,
-            creator: "MARS",
-            properties: { worldVerified: world.worldVerified, ...(world.humanId && { humanId: world.humanId }) },
+            capabilities: body.capabilities,
+            model: body.model,
+            initialBalance: body.initialBalance,
+            accountId: body.accountId,
+            worldAddress: body.worldAddress,
+            worldVerified: body.worldVerified,
+            humanId: body.humanId,
           })
         );
-        const reg = await submitMessage(
-          client,
-          body.registryTopicId,
-          buildAgentRegistered({ account, role: body.role ?? "auditor", name: body.name ?? "agent", profileTopicId, evmAddress: created?.evmAddress, worldVerified: world.worldVerified, humanId: world.humanId })
-        );
-        return res.status(200).json({ account, evmAddress: created?.evmAddress, profileTopicId, registrySeq: reg.sequenceNumber, ...world, newAccount: created });
       }
       case "startJob": {
         // create the job's own audit-trail sub-topic → log the job into the main registry
@@ -211,6 +227,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
       case "readMainRegistry": {
         return res.status(200).json(computeRegistry(await readTopicMessages(body.registryTopicId, body.limit ?? 1000)));
+      }
+      case "logHumanVerified": {
+        // log a completed World ID verification (verifier nullifier / evm hash) into the main HCS registry
+        return res.status(200).json(await submitMessage(client, body.registryTopicId, buildHumanVerified(body.nullifier, { evmAddress: body.evmAddress, signalHash: body.signalHash, account: body.account })));
       }
 
       // ── HCS-26: SKILLS REGISTRY ───────────────────────────────
@@ -356,6 +376,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // ── REVIEWS & RATINGS ─────────────────────────────────────
       case "createReviewBoard": {
         const topicId = await createTopic(client, "mars-reviews", submitKey);
+        // seed the review HCS with an initial marker (op:"seed" is ignored by review aggregates)
+        await submitMessage(client, topicId, JSON.stringify({ p: "mars-review", op: "seed", note: "MARS review board initialized", timestamp: new Date().toISOString() }));
         return res.status(200).json({ topicId });
       }
       case "postReview": {
@@ -386,12 +408,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({
           error: `Unknown action "${action}".`,
           actions: [
-            "createAccount",
+            "createAccount / worldCheck",
             "createTopic / submitMessage / readTopic",
-            "createVerifiedCollection / createLicenseCollection / mintNft / associateToken / transferNft",
+            "createVerifiedCollection / createLicenseCollection / mintNft / checkNft / associateToken / transferNft",
             "uploadReport / downloadReport",
             "createRegistry / registerInRegistry / readRegistry",
-            "createMainRegistry / registerAgent / startJob / updateJob / readMainRegistry",
+            "initMars / createMainRegistry / registerAgent / startJob / updateJob / readMainRegistry / logHumanVerified",
             "createSkillsRegistry / createVersionRegistry / registerSkill / registerVersion / uploadManifest",
             "trustScore",
             "createRfqBoard / rfqAnnounce / rfqPropose / rfqRespond / rfqComplete / rfqWithdraw / rfqList",
