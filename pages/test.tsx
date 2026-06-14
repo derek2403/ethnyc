@@ -45,8 +45,8 @@ export default function EscrowTest() {
   const [jobId, setJobId] = useState(0);
   const [pendingJobId, setPendingJobId] = useState<number | null>(null);
   const [approveAmt, setApproveAmt] = useState("100");
-  const [fee, setFee] = useState("1");
-  const [bond, setBond] = useState("0.5");
+  const [fee, setFee] = useState("0.01");
+  const [bond, setBond] = useState("0.02");
   const [reporter, setReporter] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [bondBusy, setBondBusy] = useState(false);
@@ -176,23 +176,36 @@ export default function EscrowTest() {
   const doCreate = () => {
     if (!address) return;
     if (!agent?.address) { setFlowMsg("agent not loaded yet — Refresh"); return; }
+    // fee/bond MAY be 0 here — open a price-less DRAFT first, then fill the agreed price with
+    // "Set terms" once the negotiation finishes. (fundFee/postBond enforce a non-zero price
+    // before anything is locked, so a 0/0 draft can never be funded by accident.)
     setFlowMsg(null);
     setPendingJobId(Number(nextJobId.data ?? 1n));
     setLastAction("createJob");
     // developer = you (author), auditor = the agent
     writeContract({ address: ESCROW_ADDRESS, abi: ESCROW_ABI, functionName: "createJob", args: [address, agent.address as `0x${string}`, amt(fee), amt(bond)] });
   };
-  const doFund = () => { setFlowMsg(null); setLastAction("fundFee"); writeContract({ address: ESCROW_ADDRESS, abi: ESCROW_ABI, functionName: "fundFee", args: [BigInt(jobId)] }); };
+  // Fill in / replace the agreed fee + bond on an existing Open job (the "after the discussion" step).
+  const doSetTerms = () => { setFlowMsg(null); setLastAction("setTerms"); writeContract({ address: ESCROW_ADDRESS, abi: ESCROW_ABI, functionName: "setTerms", args: [BigInt(jobId), amt(fee), amt(bond)] }); };
+  // v3 contract: fundFee(jobId, fee) / postBond(jobId, bond) take the amount directly — type the
+  // number in section 3 and the click locks exactly that, each side independently (no setTerms dance).
+  const doFund = () => {
+    if (!jobId) return;
+    setFlowMsg(null);
+    setLastAction("fundFee");
+    writeContract({ address: ESCROW_ADDRESS, abi: ESCROW_ABI, functionName: "fundFee", args: [BigInt(jobId), amt(fee)] });
+  };
   // The agent (auditor) approves + posts the bond, server-side.
   const doBond = async () => {
     if (!jobId) return;
     setBondBusy(true);
     setFlowMsg(null);
     try {
+      // pass the typed bond amount → the agent (auditor) posts exactly that, server-side
       const res = await fetch("/api/agent-post-bond", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId }),
+        body: JSON.stringify({ jobId, bond: amt(bond).toString() }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
@@ -511,10 +524,11 @@ export default function EscrowTest() {
                 </button>
               ) : (
                 <div className="flex flex-wrap items-end gap-3">
-                  <div className="flex flex-col gap-1"><span className={label}>Fee</span><input className={input} value={fee} onChange={(e) => setFee(e.target.value)} /></div>
-                  <div className="flex flex-col gap-1"><span className={label}>Bond</span><input className={input} value={bond} onChange={(e) => setBond(e.target.value)} /></div>
+                  <div className="flex flex-col gap-1"><span className={label}>Fee</span><input className={input} value={fee} onChange={(e) => setFee(e.target.value)} placeholder="0 = draft" /></div>
+                  <div className="flex flex-col gap-1"><span className={label}>Bond</span><input className={input} value={bond} onChange={(e) => setBond(e.target.value)} placeholder="0 = draft" /></div>
                   <Btn onClick={doCreate}>Create job</Btn>
-                  <span className="text-xs text-zinc-500">developer = you · auditor = agent {agent?.address ? short(agent.address) : "…"}</span>
+                  <Btn onClick={doSetTerms} disabled={!jobId}>Set terms</Btn>
+                  <span className="text-xs text-zinc-500">create with 0/0 to open a draft, then <b className="text-zinc-300">Set terms</b> after the price is agreed · developer = you · auditor = agent {agent?.address ? short(agent.address) : "…"}</span>
                 </div>
               )}
             </div>
@@ -522,8 +536,10 @@ export default function EscrowTest() {
             {/* 3 fund */}
             <div className={card}>
               <p className="mb-3 text-sm font-medium text-zinc-300">3 · Lock funds in escrow</p>
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="flex flex-col gap-1"><span className={label}>Fee</span><input className={input} value={fee} onChange={(e) => setFee(e.target.value)} placeholder="0.01" /></div>
                 <Btn onClick={doFund} disabled={!jobId}>Fund fee (you)</Btn>
+                <div className="flex flex-col gap-1"><span className={label}>Bond</span><input className={input} value={bond} onChange={(e) => setBond(e.target.value)} placeholder="0.02" /></div>
                 <button
                   onClick={doBond}
                   disabled={!jobId || bondBusy}
@@ -531,7 +547,7 @@ export default function EscrowTest() {
                 >
                   {bondBusy ? "agent posting…" : "Post bond (agent)"}
                 </button>
-                <span className="text-xs text-zinc-500">you fund the fee · the agent (auditor) posts the bond</span>
+                <span className="text-xs text-zinc-500">type each amount → that exact amount is locked on-chain · you fund the fee · the agent (auditor) posts the bond</span>
               </div>
               {allowanceNum <= 0 && (
                 <p className="mt-2 text-xs text-amber-400">Your allowance is 0 — re-approve (step 1) before funding the fee.</p>
