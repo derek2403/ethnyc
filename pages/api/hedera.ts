@@ -427,13 +427,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // real author CustomRoyaltyFee, and records the premium skill in db/skills.json.
       case "publishPremiumSkill": {
         const skill: string = body.skill;
-        const author = body.author || {}; // { hederaId, evm, humanId }
+        const author = body.author || {}; // { hederaId?, evm, humanId }
         const royaltyPct = Math.max(1, Math.min(99, Math.round(Number(body.royaltyPct ?? 10))));
         if (body.verdict !== "SAFE") return res.status(400).json({ error: "premium publish requires a SAFE verdict" });
         if (!skill) return res.status(400).json({ error: "skill required" });
-        if (!/^0\.0\.\d+$/.test(String(author.hederaId || ""))) {
-          return res.status(400).json({ error: "author.hederaId (0.0.x) required for the royalty collector" });
-        }
+        // hederaId is OPTIONAL: with it → the Hedera CustomRoyaltyFee rail is added;
+        // without it → Arc x402 split only (royalty rides the escrow developer = author wallet).
+        const hederaId: string | null = /^0\.0\.\d+$/.test(String(author.hederaId || "")) ? author.hederaId : null;
 
         // 1) VERIFIED NFT + decision/review + main-registry update (reuse the chatroom finalizer)
         const finalize = await finalizeTaskToHcs(client, {
@@ -443,23 +443,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           approve: true,
           rating: body.rating,
           comment: body.comment ?? "Premium skill — author self-published, clean audit.",
-          requester: author.hederaId,
+          requester: hederaId ?? (body.requester || "author"),
           auditor: body.auditor || getOperatorId(),
           reviewTopicId: body.reviewTopicId,
           votingTopicId: body.votingTopicId,
           registryTopicId: body.registryTopicId,
-          mintToAccountId: author.hederaId,
+          mintToAccountId: hederaId ?? undefined, // else the VERIFIED NFT stays in the operator treasury
         });
 
-        // 2) premium LICENSE collection with the author's real CustomRoyaltyFee
-        const license = await createLicenseCollection(client, {
-          name: `MARS Premium · ${skill}`.slice(0, 100),
-          symbol: "MARSP",
-          royaltyCollectorAccountId: author.hederaId,
-          numerator: royaltyPct,
-          denominator: 100,
-          fallbackHbar: 1,
-        });
+        // 2) premium LICENSE collection — with the author's real CustomRoyaltyFee when a Hedera
+        //    account was supplied, otherwise a plain license (royalty rides Arc x402 only).
+        const license = await createLicenseCollection(client, hederaId
+          ? { name: `MARS Premium · ${skill}`.slice(0, 100), symbol: "MARSP", royaltyCollectorAccountId: hederaId, numerator: royaltyPct, denominator: 100, fallbackHbar: 1 }
+          : { name: `MARS Premium · ${skill}`.slice(0, 100), symbol: "MARSP" });
 
         // 3) persist the premium skill (source loaded server-side, authoritative)
         const loaded = loadDemoSkill(body.skillRef ?? skill);
@@ -468,7 +464,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const record = savePremiumSkill({
           skill,
           files,
-          author: { hederaId: author.hederaId, evm: author.evm ?? null, humanId: author.humanId ?? null },
+          author: { hederaId, evm: author.evm ?? null, humanId: author.humanId ?? null },
           royaltyPct,
           price: body.price ?? null,
           escrowJobId: body.escrowJobId ?? null,
