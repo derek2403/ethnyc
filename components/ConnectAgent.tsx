@@ -36,18 +36,29 @@ const hashscanAccount = (id: string) => `https://hashscan.io/testnet/account/${i
 const short = (s: string | null, head = 10, tail = 6) =>
   s && s.length > head + tail + 1 ? `${s.slice(0, head)}…${s.slice(-tail)}` : s || "—";
 
-function Field({ label, value, title }: { label: string; value: string; title?: string }) {
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// Format an ISO timestamp deterministically (no Date → no SSR/timezone skew).
+function fmtDate(iso: string | null) {
+  if (!iso) return "—";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${MONTHS[+m[2] - 1]} ${+m[3]}, ${m[1]}` : iso.slice(0, 10);
+}
+
+// A flat inset tile: uppercase caption over a mono value. Fills the row width.
+function Tile({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
-      <span style={{ fontSize: 9, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--ink-3)", flex: "none" }}>{label}</span>
-      <span title={title ?? value} style={{ fontFamily: "var(--code)", fontSize: 10, color: "var(--ink-2)", minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", textAlign: "right" }}>{value}</span>
+    <div style={{ background: "var(--inset)", borderRadius: 8, padding: "6px 9px", minWidth: 0 }}>
+      <div style={{ fontSize: 7.5, fontWeight: 600, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--ink-3)" }}>{label}</div>
+      <div title={title ?? value} style={{ fontFamily: "var(--code)", fontSize: 10.5, color: "var(--ink)", marginTop: 2, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{value}</div>
     </div>
   );
 }
 
-// One connected agent. The whole card is a link to its HashScan account page.
+// One connected agent — a full-width borderless row (link to its HashScan page).
 function AgentCard({ a, fresh }: { a: ConnectedAgent; fresh: boolean }) {
-  const roleColor = a.role === "auditor" ? "var(--comm)" : "var(--warn)";
+  const isAuditor = a.role === "auditor";
+  const roleColor = isAuditor ? "var(--comm)" : "var(--warn)";
+  const roleTint = isAuditor ? "rgba(47,111,208,0.1)" : "rgba(185,120,15,0.12)";
   return (
     <a
       className="ca-agent-card"
@@ -55,38 +66,34 @@ function AgentCard({ a, fresh }: { a: ConnectedAgent; fresh: boolean }) {
       target="_blank"
       rel="noopener noreferrer"
       title={`Open ${a.id} on HashScan ↗`}
-      style={
-        fresh
-          ? { display: "block", textDecoration: "none", borderRadius: 9, padding: "10px 12px", border: "1px solid var(--safe)", background: "rgba(31,157,99,0.08)" }
-          : { display: "block", textDecoration: "none", borderRadius: 9, padding: "10px 12px" }
-      }
+      style={{ display: "block", textDecoration: "none", padding: "11px 4px", ...(fresh ? { background: "rgba(31,157,99,0.07)" } : null) }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-        <span
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: "50%",
-            flex: "none",
-            background: a.verified ? "var(--safe)" : "var(--ink-3)",
-            animation: fresh ? "onlinePulse 1.4s ease-in-out infinite" : "none",
-          }}
-        />
-        <span style={{ fontFamily: "var(--code)", fontSize: 11.5, fontWeight: 500, color: "var(--ink)", flex: 1, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{a.id}</span>
-        {fresh && <span style={{ fontSize: 8.5, color: "var(--safe)", letterSpacing: ".08em", textTransform: "uppercase", flex: "none" }}>just connected</span>}
-        <span style={{ fontSize: 9, color: roleColor, border: "1px solid var(--hair-soft)", padding: "1px 6px", borderRadius: 6, textTransform: "uppercase", letterSpacing: ".06em", flex: "none" }}>{a.role}</span>
-        <span style={{ fontSize: 9.5, color: "var(--ink-3)", flex: "none" }}>↗ explorer</span>
+      {/* header: status · id · role · verified · rating/explorer */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ width: 7, height: 7, borderRadius: "50%", flex: "none", background: a.verified ? "var(--safe)" : "var(--ink-3)", animation: fresh ? "onlinePulse 1.4s ease-in-out infinite" : "none" }} />
+        <span style={{ fontFamily: "var(--code)", fontSize: 12.5, fontWeight: 600, color: "var(--ink)", minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{a.id}</span>
+        <span style={{ fontSize: 8.5, fontWeight: 600, color: roleColor, background: roleTint, padding: "2px 7px", borderRadius: 999, textTransform: "uppercase", letterSpacing: ".07em", flex: "none" }}>{a.role}</span>
+        {a.verified && <span title={a.humanId ?? "World ID verified"} style={{ fontSize: 8.5, fontWeight: 600, color: "var(--safe)", background: "rgba(31,157,99,0.1)", padding: "2px 7px", borderRadius: 999, letterSpacing: ".04em", flex: "none" }}>✓ World</span>}
+        {fresh && <span style={{ fontSize: 8.5, fontWeight: 600, color: "var(--safe)", letterSpacing: ".06em", textTransform: "uppercase", flex: "none" }}>just connected</span>}
+        <span style={{ flex: 1 }} />
+        <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--ink-2)", flex: "none" }}>★ {a.rating.toFixed(1)}</span>
+        <span style={{ fontSize: 9.5, fontWeight: 500, color: "var(--mars)", flex: "none" }}>explorer ↗</span>
       </div>
-      <div style={{ marginTop: 9, paddingTop: 9, borderTop: "1px solid var(--hair-soft)", display: "flex", flexDirection: "column", gap: 5 }}>
-        <Field label="evm" value={short(a.evm)} title={a.evm ?? undefined} />
-        <Field label="world id" value={a.verified ? `✓ ${short(a.humanId)}` : "unverified"} title={a.humanId ?? undefined} />
-        <Field label="voting" value={a.votingTopic ?? "—"} />
-        <Field label="review" value={a.reviewTopic ?? "—"} />
-        <Field label="profile" value={a.profileTopic ?? "—"} />
-        <Field label="memo" value={a.accountMemo ?? "—"} />
-        <Field label="registry" value={a.registrySeq != null ? `#${a.registrySeq}` : "—"} />
-        <Field label="rating" value={`${a.rating.toFixed(1)} / 5`} />
-        <Field label="registered" value={(a.registeredAt ?? "").slice(0, 10) || "—"} title={a.registeredAt ?? undefined} />
+
+      {/* evm — aligned under the id */}
+      <div title={a.evm ?? undefined} style={{ fontFamily: "var(--code)", fontSize: 10, color: "var(--ink-3)", marginTop: 3, marginLeft: 15, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{short(a.evm)}</div>
+
+      {/* topic tiles — span the full width */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 10 }}>
+        <Tile label="voting" value={a.votingTopic ?? "—"} />
+        <Tile label="review" value={a.reviewTopic ?? "—"} />
+        <Tile label="profile" value={a.profileTopic ?? "—"} />
+      </div>
+
+      {/* meta footer */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 9 }}>
+        <span title={a.accountMemo ?? undefined} style={{ fontFamily: "var(--code)", fontSize: 9.5, color: "var(--ink-3)", minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{a.accountMemo ?? "—"}</span>
+        <span style={{ fontSize: 9.5, color: "var(--ink-3)", flex: "none", whiteSpace: "nowrap" }}>registry #{a.registrySeq ?? "—"} · {fmtDate(a.registeredAt)}</span>
       </div>
     </a>
   );
@@ -192,8 +199,10 @@ export default function ConnectAgent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, idsKey]);
 
-  // Freshly-connected float to the top; the rest keep newest-first order.
-  const roster = [...agents].reverse().sort((a, b) => Number(fresh.has(b.id)) - Number(fresh.has(a.id)));
+  const latest: ConnectedAgent | null =
+    agents.length === 0
+      ? null
+      : [...agents].sort((a, b) => Number(fresh.has(b.id)) - Number(fresh.has(a.id)) || String(b.registeredAt ?? "").localeCompare(String(a.registeredAt ?? "")))[0];
 
   // Streaming curl: creates the account, prints the World-ID verify QR in your
   // terminal, polls AgentBook, then finishes (voting/review/profile/registry).
@@ -234,9 +243,9 @@ export default function ConnectAgent() {
       </div>
 
       <div className="no-bar" style={{ flex: 1, minHeight: 0, padding: 16, overflow: "auto", display: "flex", flexDirection: "column" }}>
-        {/* Once any agent is connected, the cell becomes its roster + profiles.
-            Before that, it shows the onboarding intro + register/connect. */}
-        {mode === "home" && roster.length === 0 && (
+        {/* Once any agent is connected, the cell shows the latest account's
+            profile. Before that, the onboarding intro + register/connect. */}
+        {mode === "home" && !latest && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
             <div style={{ fontSize: 12.5, color: "var(--ink-2)", textAlign: "center", maxWidth: 360, lineHeight: 1.5 }}>
               Onboard your agent to MARS — register a new identity, or log back into an existing one.
@@ -258,16 +267,14 @@ export default function ConnectAgent() {
           </div>
         )}
 
-        {mode === "home" && roster.length > 0 && (
+        {mode === "home" && latest && (
           <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: ".1em", color: "var(--ink-3)", textTransform: "uppercase" }}>Connected agents</span>
-              <span style={{ fontSize: 9.5, color: "var(--ink-3)" }}>{state.stats.users} users · {state.stats.auditors} auditors · tap → explorer</span>
+              <span style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: ".1em", color: "var(--ink-3)", textTransform: "uppercase" }}>Latest agent</span>
+              <span style={{ fontSize: 9.5, color: "var(--ink-3)" }}>{agents.length > 1 ? `+${agents.length - 1} more · ` : ""}tap → explorer</span>
             </div>
-            <div className="no-bar" style={{ flex: 1, minHeight: 0, overflow: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
-              {roster.map((a) => (
-                <AgentCard key={a.id} a={a} fresh={fresh.has(a.id)} />
-              ))}
+            <div className="no-bar" style={{ flex: 1, minHeight: 0, overflow: "auto", display: "flex", flexDirection: "column" }}>
+              <AgentCard a={latest} fresh={fresh.has(latest.id)} />
             </div>
             <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8 }}>
               <button

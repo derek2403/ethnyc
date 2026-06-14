@@ -211,15 +211,18 @@ export default function Page1() {
           border-color: var(--hair);
           background: rgba(0, 0, 0, 0.03);
         }
-        /* Connect Agent · connected-agent cards (link to HashScan) */
+        /* Connect Agent · connected-agent rows (full-width, link to HashScan) */
         .ca-agent-card {
-          border: 1px solid var(--hair-soft);
-          background: var(--inset);
-          transition: border-color 0.15s ease, background 0.15s ease;
+          display: block;
+          border-radius: 8px;
+          transition: background 0.15s ease;
         }
         .ca-agent-card:hover {
-          border-color: var(--mars-soft);
-          background: rgba(194, 84, 42, 0.05);
+          background: rgba(0, 0, 0, 0.025);
+        }
+        /* hairline divider between consecutive rows */
+        .ca-agent-card + .ca-agent-card {
+          border-top: 1px solid var(--hair-soft);
         }
         .body-hit-comm:hover {
           stroke: var(--comm);
