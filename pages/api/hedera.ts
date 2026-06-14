@@ -88,6 +88,7 @@ import { getSkill } from "@/lib/demo-skills";
 import { generateAuditorQuote } from "@/lib/auditor";
 import { auditTaskToHcs, finalizeTaskToHcs } from "@/lib/audit-task";
 import { savePremiumSkill } from "@/lib/db.mjs";
+import { resolveRemoteSkill, resolveLocalDemoSkill } from "@/lib/skill-source.mjs";
 
 export const config = {
   api: { bodyParser: { sizeLimit: "5mb" } }, // audit reports / manifests can be large
@@ -347,13 +348,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(200).json(await generateAuditorQuote(skill, body.ask));
       }
 
-      // ── /chatroom: accept the quote → spin the per-task topic + log the job ──
+      // ── resolve a skill REFERENCE (demo name · npm package · github/raw URL) → { name, files } ──
+      // Lets the /publish UI ingest skills the user doesn't paste/upload (their repo / npm).
+      case "resolveSkill": {
+        const ref = String(body.ref ?? body.skillRef ?? "").trim();
+        if (!ref) return res.status(400).json({ error: "ref required" });
+        try {
+          const resolved = resolveLocalDemoSkill(ref) ?? (await resolveRemoteSkill(ref));
+          return res.status(200).json({ name: resolved.name, files: resolved.files });
+        } catch (e) {
+          return res.status(400).json({ error: e instanceof Error ? e.message : "could not resolve skill" });
+        }
+      }
+
+      // ── /chatroom + /publish: accept the quote → spin the per-task topic + log the job ──
       case "createTask": {
-        // skill source is read SERVER-SIDE from demo/skills (file OR Claude-Skill folder) so `init` is authoritative
+        // Author-submitted source (paste/upload/URL) arrives as body.content; otherwise the
+        // skill is a demo ref read SERVER-SIDE from demo/skills so `init` stays authoritative.
         const skillRef: string = body.skillRef ?? body.skillFile ?? "price-checker.js";
-        const loaded = loadDemoSkill(skillRef);
+        const inline = typeof body.content === "string" && body.content.trim() ? body.content : "";
+        const loaded = inline ? { name: body.skill ?? "skill", source: inline } : loadDemoSkill(skillRef);
         const skill: string = body.skill ?? loaded.name;
-        const source = loaded.source || (typeof body.content === "string" ? body.content : "");
+        const source = loaded.source;
         const contentHash = createHash("sha256").update(source).digest("hex");
         const terms = {
           skill,
@@ -392,10 +408,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       // ── /chatroom: run the REAL audit pipeline → record each stage + verdict on the task topic ──
       case "runAudit": {
-        // 4 OpenAI stages (or canned fallback) → HCS stages + verdict(+capabilities) + HCS-1 report + registry
+        // 4 OpenAI stages (or canned fallback) → HCS stages + verdict(+capabilities) + HCS-1 report + registry.
+        // Author-submitted skills pass their actual `files` (+ `skill` name); demo skills pass a `skillRef`.
         const result = await auditTaskToHcs(client, {
           taskTopicId: body.taskTopicId,
           skillRef: body.skillRef ?? body.skill,
+          files: Array.isArray(body.files) && body.files.length ? body.files : undefined,
+          skillName: body.skill,
           registryTopicId: body.registryTopicId,
         });
         return res.status(200).json(result);
@@ -457,10 +476,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           ? { name: `MARS Premium · ${skill}`.slice(0, 100), symbol: "MARSP", royaltyCollectorAccountId: hederaId, numerator: royaltyPct, denominator: 100, fallbackHbar: 1 }
           : { name: `MARS Premium · ${skill}`.slice(0, 100), symbol: "MARSP" });
 
-        // 3) persist the premium skill (source loaded server-side, authoritative)
-        const loaded = loadDemoSkill(body.skillRef ?? skill);
-        const files = loaded.source ? [{ name: loaded.name || skill, content: loaded.source }] : [];
-        const fileSha256 = createHash("sha256").update(loaded.source || skill).digest("hex");
+        // 3) persist the premium skill — author-submitted files when present, else a demo ref
+        const provided: { name: string; content: string }[] | null = Array.isArray(body.files) && body.files.length ? body.files : null;
+        const loaded = provided ? null : loadDemoSkill(body.skillRef ?? skill);
+        const files = provided ?? (loaded?.source ? [{ name: loaded.name || skill, content: loaded.source }] : []);
+        const srcForHash = provided ? provided.map((f) => f.content).join("\n") : (loaded?.source || skill);
+        const fileSha256 = createHash("sha256").update(srcForHash).digest("hex");
         const record = savePremiumSkill({
           skill,
           files,
