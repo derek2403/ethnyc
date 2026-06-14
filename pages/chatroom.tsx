@@ -372,7 +372,7 @@ export default function ChatRoom() {
                 {(decision === "approved" || decision === "disapproved") && final && (
                   <div className="mt-3 border-t border-zinc-200 pt-3 text-sm dark:border-zinc-800">
                     <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider ${decision === "approved" ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"}`}>
-                      {decision === "approved" ? "✓ Verified" : "⛔ Not verified — blocked"}
+                      {decision === "approved" ? "✓ Safe & Verified" : "⛔ Not verified — blocked"}
                     </span>
                     <MetaRow label="Auditor reviewed" value={`${"★".repeat(final.rating)} (${final.rating}/5)`} />
                     <MetaRow label="Auditor reputation" value={<a className="text-blue-600 hover:underline dark:text-blue-400" target="_blank" rel="noreferrer" href={hs("topic", AUDITOR_VOTING_TOPIC)}>+{final.rating} good ↗</a>} />
