@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { runAuditPipeline, DEFAULT_MODEL } from "@/lib/audit-core.mjs";
 import { resolveRemoteSkill, resolveLocalDemoSkill } from "@/lib/skill-source.mjs";
 import { startAudit, finishAudit, failAudit, saveVerifiedSkill, setAuditStage, appendEvidence, saveAttestation } from "@/lib/db.mjs";
+import { AUDITOR } from "@/lib/demo-skills";
 
 // MARS audit endpoint — run the real OpenAI pipeline over a skill via curl.
 // Resolves: planted demo (demo/skills) → live npm package → raw URL → POST source.
@@ -61,7 +62,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // mark "auditing" the moment it starts (best-effort: read-only FS won't persist)
   try {
-    startAudit({ auditId, skill: name, agentId, model, files: files.map((f) => f.name) });
+    startAudit({ auditId, skill: name, agentId, auditor: AUDITOR, model, files: files.map((f) => f.name) });
   } catch {}
 
   const opts = { name, files, apiKey, model, attestorUrl: process.env.PHALA_ATTESTOR_URL, auditId };
