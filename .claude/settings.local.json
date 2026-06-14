@@ -67,7 +67,7 @@
     ],
     "defaultMode": "bypassPermissions"
   },
-  "model": "claude-fable-5",
+  "model": "claude-opus-4-8[1m]",
   "enableWorkflows": true,
   "effortLevel": "xhigh",
   "ultracode": true,

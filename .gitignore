@@ -34,6 +34,10 @@ yarn-error.log*
 .env*
 package-lock.json
 
+# MARS seeded infra + pending agent (per-environment)
+mars-state.json
+agent-pending.json
+
 # vercel
 .vercel
 
