@@ -6,21 +6,27 @@
 // Given an agent_id (the requester) and a skill reference (local path | demo name |
 // npm package | github raw url), runTaskFlow() runs the entire lifecycle end-to-end:
 //
-//   STEP 1  negotiate + create the task   — HCS-16 room (ask → AI quote → accept), then a
-//                                           fresh per-task HCS topic + a registry job_posted
-//   STEP 2  run the auditing procedure     — the REAL pipeline: 4 OpenAI stages (scanner →
+//   STEP 1  create + post the task        — open the per-task HCS topic FIRST (init, status
+//                                           "posted" = not started) + registry job_posted("open")
+//   STEP 2  negotiate                      — HCS-16 room (ask → AI quote → accept), after posting
+//   STEP 3  lock the escrow (both sides)   — Arc MarsEscrow: developer fee + auditor bond (0.1/0.1);
+//                                           only then does Hedera advance: escrow_funded + funded
+//   STEP 4  run the auditing procedure     — the REAL pipeline: 4 OpenAI stages (scanner →
 //                                           sandbox → fork → synthesizer) + a Phala TDX
 //                                           attestation; every stage + verdict posted to HCS
-//   STEP 3  add to db + /skills + whitelist — on SAFE: save the versioned skill, register it,
+//   STEP 5  add to db + /skills + whitelist — on SAFE: save the versioned skill, register it,
 //                                           and add the requester to licensed_agents
-//   STEP 4  requester decision + mint NFT   — approve (SAFE) / block (DANGEROUS); review the
+//   STEP 6  requester decision + mint NFT   — approve (SAFE) / block (DANGEROUS); review the
 //                                           auditor; mint a VERIFIED HTS NFT to the requester
-//   STEP 5  rate + comment the auditor      — AI comment (gpt-4.1-nano) → HCS + the DB
+//   STEP 7  rate + comment the auditor      — AI comment (gpt-4.1-nano) → HCS + the DB
+//   STEP 8  settle or slash the escrow      — approve → release (fee+bond → auditor); disapprove →
+//                                           slash (bond → reporter, fee refunded → developer)
 //
 // WHERE THINGS ARE STORED
 //   HCS  · negotiation room (HCS-16)        — the 3 chat lines
-//        · per-task topic (id == auditId)   — init → stages → verdict → decision → reviewed → minted
-//        · main registry                    — job_posted (agreed) → job_updated (verified/rejected)
+//        · per-task topic (id == auditId)   — init(posted) → escrow_funded → stages → verdict →
+//                                             decision → reviewed → minted → escrow_resolved
+//        · main registry                    — job_posted(open) → job_updated(funded → verified/rejected)
 //        · HCS-1 file                        — the skill source when > 1000 bytes (hcs://1/<id>)
 //        · auditor review + voting topics    — the rating, AI comment, and a "good" reputation vote
 //        · HTS                               — the VERIFIED NFT collection + minted serial
@@ -40,9 +46,13 @@ import {
   getClient, getOperatorKey, getOperatorId, hashscan,
   createTopic, submitMessage,
   hcs16Memo, buildHCS16FloraCreated, buildHCS16Chat,
-  buildTaskInit, buildAuditStage, buildAuditVerdictFull, buildJobPosted,
+  buildTaskInit, buildAuditStage, buildAuditVerdictFull, buildJobPosted, buildJobUpdated,
+  buildEscrowFunded, buildEscrowResolved,
   uploadFileHCS1,
 } from "./hedera";
+// Arc payment leg: lock both sides into MarsEscrow once agreed, then settle (approve) or slash
+// (disapprove) after the audit. Fail-soft — if the Arc keys/funds aren't there the flow carries on.
+import { openAndFundEscrow, resolveEscrow, slashEscrow, escrowConfigured, escrowAmounts, escrowAccounts, ESCROW_ADDRESS, explorerTx } from "./escrow-server";
 import { loadState, saveState } from "./state";
 import { initMars } from "./agents";
 import { REQUESTER, AUDITOR, AUDITOR_REVIEW_TOPIC, AUDITOR_VOTING_TOPIC, requesterAsk, requesterAccept, SKILL_DESCRIPTIONS, type DemoSkill } from "./demo-skills";
@@ -89,6 +99,14 @@ export interface TaskFlowResult {
   decision: "approved" | "disapproved";
   mint: { tokenId: string; serial: string; owner: string } | null;
   review: { auditor: string; rating: number; comment: string; source: "openai" | "fallback"; auditorAvgRating: string };
+  // Arc escrow leg (null when not configured / skipped). funded = both sides locked on agreement;
+  // resolved = settled (approve → fee+bond to auditor) or slashed (disapprove → bond to reporter).
+  escrow: {
+    jobId: number; developer: string; auditor: string; fee: string; bond: string;
+    funded: boolean; resolved: boolean; outcome: "settled" | "slashed" | null;
+    createTx?: string; fundFeeTx?: string; postBondTx?: string; resolveTx?: string;
+    paidTo?: string; amount?: string; feeRefunded?: string; status: string;
+  } | null;
   hashscanTask: string;
 }
 
@@ -138,12 +156,39 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
     const registryTopicId = loadState().registryTopicId ?? (await initMars(client)).registryTopicId;
 
     // ════════════════════════════════════════════════════════════════════════
-    // STEP 1 — NEGOTIATE + CREATE THE TASK
+    // STEP 1 — CREATE + POST THE TASK  (Hedera task topic FIRST, status "posted" = NOT started)
     // ════════════════════════════════════════════════════════════════════════
+    // The requester posts a skill for audit. We open the per-task HCS topic right away with an init
+    // manifest (status "posted") so the task is visible on-chain BEFORE any negotiation — it exists
+    // but hasn't started. The skill source rides inline, or on HCS-1 when it's > 1KB.
     const chatRoomTopicId = await ensureChatRoom(client);
-    w(`\n${C.amber}${C.bold}NEGOTIATION ROOM${C.reset}  ${C.dim}HCS-16${C.reset}  ${hashscan("topic", chatRoomTopicId)}`);
-    w(`${C.dim}skill ${name} · requester ${requester}${C.reset}\n`);
+    const source = files.map((f) => `=== ${f.name} ===\n${f.content}`).join("\n").slice(0, 8000);
+    const contentHash = createHash("sha256").update(source).digest("hex");
+    const terms = {
+      // WHO/WHAT manifest: payer (added by buildTaskInit) + auditor + skill + declared description
+      // + the files submitted + scope + the asking terms. status "posted" = awaiting negotiation.
+      skill: name, description: SKILL_DESCRIPTIONS[opts.skillRef], files: files.map((f) => f.name),
+      scope: desc.scope, requester, auditor: AUDITOR,
+      price: desc.price, bond: desc.bond, time: desc.time, version: desc.version,
+      tier: desc.tier, compliance: desc.compliance, contentHash, chatRoomTopicId,
+    };
+    let content = source;
+    let contentHrl: string | undefined;
+    if (Buffer.byteLength(buildTaskInit({ ...terms, content: source, status: "posted" }), "utf-8") > 1000) {
+      const file = await uploadFileHCS1(client, source, "application/octet-stream");
+      content = file.hrl;
+      contentHrl = file.hrl;
+    }
+    const taskTopicId = await createTopic(client, `mars-task:${name}`, getOperatorKey().publicKey);
+    const initSeq = (await submitMessage(client, taskTopicId, buildTaskInit({ ...terms, content, contentHrl, status: "posted" }))).sequenceNumber;
+    await submitMessage(client, registryTopicId, buildJobPosted({ jobId: taskTopicId, skill: name, requester, scope: desc.scope, auditTrailTopicId: taskTopicId, status: "posted" }));
+    w(`\n${C.bold}TASK POSTED${C.reset}  ${hashscan("topic", taskTopicId)}  ${C.dim}status: posted (not started)${C.reset}`);
+    w(`  ${C.green}⛓ seq ${initSeq}${C.reset}  init · skill ${name} · requester ${requester}${contentHrl ? ` · content ${contentHrl}` : ""}\n`);
 
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 2 — NEGOTIATE  (the talk happens AFTER the task is posted)
+    // ════════════════════════════════════════════════════════════════════════
+    w(`${C.amber}${C.bold}NEGOTIATION ROOM${C.reset}  ${C.dim}HCS-16${C.reset}  ${hashscan("topic", chatRoomTopicId)}\n`);
     // ── negotiation — real HCS messages; only the auditor's quote is AI-generated ──
     const postTurn = async (from: string, text: string, tag = "") => {
       const r = await submitMessage(client, chatRoomTopicId, buildHCS16Chat(from, "mars-chatroom", text));
@@ -157,33 +202,41 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
     await postTurn(AUDITOR, quote.text, `  ${C.dim}(${quote.source})${C.reset}`);
     await postTurn(requester, requesterAccept());
 
-    // ── accept → per-task HCS topic; init carries the real skill content + agreed terms ──
-    const source = files.map((f) => `=== ${f.name} ===\n${f.content}`).join("\n").slice(0, 8000);
-    const contentHash = createHash("sha256").update(source).digest("hex");
-    const terms = {
-      // WHO/WHAT manifest: payer (added by buildTaskInit) + auditor + skill + declared description
-      // + the files submitted + scope + agreed terms + the auditor's quote line.
-      skill: name, description: SKILL_DESCRIPTIONS[opts.skillRef], files: files.map((f) => f.name),
-      scope: desc.scope, requester, auditor: AUDITOR,
-      price: desc.price, bond: desc.bond, time: desc.time, version: desc.version,
-      tier: desc.tier, compliance: desc.compliance, contentHash, chatRoomTopicId,
-      m: quote.text,
-    };
-    let content = source;
-    let contentHrl: string | undefined;
-    if (Buffer.byteLength(buildTaskInit({ ...terms, content: source }), "utf-8") > 1000) {
-      const file = await uploadFileHCS1(client, source, "application/octet-stream");
-      content = file.hrl;
-      contentHrl = file.hrl;
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 3 — AGREED → LOCK BOTH SIDES INTO THE ARC ESCROW, then Hedera advances (task STARTS)
+    // ════════════════════════════════════════════════════════════════════════
+    // Both parties lock USDC into MarsEscrow on Arc (developer funds the FEE, auditor posts the BOND
+    // — 0.1 / 0.1 demo). The two sides are two Arc EOAs: developer = ARC_PRIVATE_KEY (or
+    // ARC_DEVELOPER_KEY), auditor = SELLER_PRIVATE_KEY (falls back to one key if unset) — see
+    // lib/escrow-server.ts. ONLY once the money is in does the Hedera task move to its next state:
+    // an `escrow_funded` receipt on the task topic + a registry job_updated → "funded" (= started).
+    // Fail-soft: no Arc keys/funds → log + skip; the audit + Hedera + NFT never depend on it.
+    let escrow: TaskFlowResult["escrow"] = null;
+    if (escrowConfigured()) {
+      const amt = escrowAmounts();
+      w(`${C.bold}ARC ESCROW${C.reset}  ${C.dim}both sides lock USDC · fee ${amt.fee} · bond ${amt.bond}${C.reset}`);
+      try {
+        const f = await openAndFundEscrow();
+        await submitMessage(client, taskTopicId, buildEscrowFunded(name, {
+          jobId: f.jobId, escrow: ESCROW_ADDRESS, developer: f.developer, auditor: f.auditor,
+          fee: f.fee, bond: f.bond, status: f.status, createTx: f.createTx, fundFeeTx: f.fundFeeTx, postBondTx: f.postBondTx,
+        }));
+        // Hedera goes to the next move only now that the money is in: registry posted → funded.
+        await submitMessage(client, registryTopicId, buildJobUpdated({ jobId: taskTopicId, status: "funded", note: `escrow ${f.fee}+${f.bond} USDC locked` }));
+        escrow = { jobId: f.jobId, developer: f.developer, auditor: f.auditor, fee: f.fee, bond: f.bond, funded: true, resolved: false, outcome: null, createTx: f.createTx, fundFeeTx: f.fundFeeTx, postBondTx: f.postBondTx, status: f.status };
+        w(`  ${C.green}✓ job #${f.jobId} ${f.status}${C.reset}  ${C.dim}developer ${f.developer.slice(0, 10)}… locked fee ${f.fee} · auditor ${f.auditor.slice(0, 10)}… posted bond ${f.bond}${C.reset}`);
+        w(`  ${C.dim}fee  ↗ ${explorerTx(f.fundFeeTx)}${C.reset}`);
+        w(`  ${C.dim}bond ↗ ${explorerTx(f.postBondTx)}${C.reset}`);
+        w(`  ${C.green}→ task STARTED${C.reset} ${C.dim}(Hedera advanced: posted → funded)${C.reset}\n`);
+      } catch (e) {
+        w(`  ${C.amber}! escrow skipped: ${e instanceof Error ? e.message : "escrow failed"}${C.reset}\n`);
+      }
+    } else {
+      w(`${C.dim}ARC ESCROW: not configured (set ARC_PRIVATE_KEY + ARC_DEVELOPER_KEY) — skipping the payment leg${C.reset}\n`);
     }
-    const taskTopicId = await createTopic(client, `mars-task:${name}`, getOperatorKey().publicKey);
-    const initSeq = (await submitMessage(client, taskTopicId, buildTaskInit({ ...terms, content, contentHrl }))).sequenceNumber;
-    await submitMessage(client, registryTopicId, buildJobPosted({ jobId: taskTopicId, skill: name, requester, scope: desc.scope, auditTrailTopicId: taskTopicId, status: "agreed" }));
-    w(`${C.bold}TASK TOPIC${C.reset}  ${hashscan("topic", taskTopicId)}`);
-    w(`  ${C.green}⛓ seq ${initSeq}${C.reset}  init · ${desc.price} escrow · bond ${desc.bond}${contentHrl ? ` · content ${contentHrl}` : ""}\n`);
 
     // ════════════════════════════════════════════════════════════════════════
-    // STEP 2 — RUN THE AUDITING PROCEDURE (the REAL pipeline, OpenAI per stage)
+    // STEP 4 — RUN THE AUDITING PROCEDURE (the REAL pipeline, OpenAI per stage)
     // ════════════════════════════════════════════════════════════════════════
     // The audit id IS the on-chain job id: the HCS task topic created above (the same id
     // used as job_posted's jobId + auditTrailTopicId). So audits.json keys directly to the
@@ -261,7 +314,7 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
     }))).sequenceNumber;
 
     // ════════════════════════════════════════════════════════════════════════
-    // STEP 3 — ADD TO DB + /skills + WHITELIST the agent_id
+    // STEP 5 — ADD TO DB + /skills + WHITELIST the agent_id
     // ════════════════════════════════════════════════════════════════════════
     // On SAFE: write the versioned skill to /skills, register it in db/skills.json,
     // and add the requester to that skill's licensed_agents (the whitelist). DANGEROUS → skip.
@@ -275,7 +328,7 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
     if (result.attestation) saveAttestation(auditId, result.attestation, { skill: name, verdict: verdict.verdict, agent_id: requester });
 
     // ════════════════════════════════════════════════════════════════════════
-    // STEP 4 — requester DECISION → review the auditor → mint a VERIFIED HTS NFT
+    // STEP 6 — requester DECISION → review the auditor → mint a VERIFIED HTS NFT
     // ════════════════════════════════════════════════════════════════════════
     // A skill is VERIFIED only on the requester's approval (SAFE → approve + mint;
     // DANGEROUS → block). finalizeTaskToHcs records the decision + auditor review on
@@ -292,7 +345,7 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
     });
 
     // ════════════════════════════════════════════════════════════════════════
-    // STEP 5 — the user-agent's rating + AI comment → recorded on HCS (above) + DB
+    // STEP 7 — the user-agent's rating + AI comment → recorded on HCS (above) + DB
     // ════════════════════════════════════════════════════════════════════════
     // finalizeTaskToHcs already wrote the review to the auditor's review + voting HCS
     // topics; here we persist the same rating + comment into the DB: the comment lives
@@ -301,6 +354,28 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
       auditorId: AUDITOR, reviewerId: requester, rating: fin.rating, comment: fin.comment,
       skill: name, verdict: verdict.verdict, reviewSeq: fin.reviewSeq, voteSeq: fin.voteSeq, taskTopicId,
     });
+
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 8 — DONE → SETTLE or SLASH THE ARC ESCROW (based on the requester's decision)
+    // ════════════════════════════════════════════════════════════════════════
+    // The audit is finished and the decision is recorded, so resolve the payment leg:
+    //   • APPROVE (SAFE)      → SETTLE: release(jobId) pays fee + bond → auditor (Funded → Settled)
+    //   • DISAPPROVE (DANGER) → SLASH:  slash(jobId, reporter) sends the bond → the auditor that
+    //                                   caught it, and refunds the fee → the developer (→ Slashed)
+    // The task topic gets an `escrow_resolved` receipt either way. Fail-soft; only runs if funded.
+    if (escrow?.funded) {
+      try {
+        const r = approve
+          ? await resolveEscrow(escrow.jobId)
+          : await slashEscrow(escrow.jobId, escrowAccounts().auditor);
+        await submitMessage(client, taskTopicId, buildEscrowResolved(name, {
+          jobId: r.jobId, outcome: r.outcome, tx: r.tx, paidTo: r.paidTo, amount: r.amount, feeRefunded: r.feeRefunded, status: r.status,
+        }));
+        escrow = { ...escrow, resolved: true, outcome: r.outcome, resolveTx: r.tx, paidTo: r.paidTo, amount: r.amount, feeRefunded: r.feeRefunded, status: r.status };
+      } catch (e) {
+        w(`  ${C.amber}! escrow ${approve ? "settle" : "slash"} skipped: ${e instanceof Error ? e.message : "resolve failed"}${C.reset}`);
+      }
+    }
 
     // ── FINAL — the two closing steps, mirrored from pages/audit.tsx:
     //   (a) Synthesizer verdict (summary · capabilities · recommendation)
@@ -322,12 +397,17 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
       w(`\n  ${C.red}✗ flagged ${verdict.verdict}${C.reset}  — not verified, not licensed`);
     }
 
-    // STEP 4 + 5 result — requester decision, auditor review/rating + AI comment, VERIFIED NFT
+    // STEP 6 + 7 result — requester decision, auditor review/rating + AI comment, VERIFIED NFT
     w(`\n  ${approve ? C.green + "APPROVED" : C.red + "BLOCKED"}${C.reset}  ${C.dim}requester ${fin.decision}${C.reset}`);
     w(`  ${C.dim}auditor reviewed${C.reset} ${C.amber}${"★".repeat(fin.rating)}${C.reset} ${C.dim}(${AUDITOR} → avg ${savedReview.rating} over ${savedReview.review_count})${C.reset}`);
     w(`  ${C.dim}comment (${review.source}):${C.reset} "${fin.comment}"`);
     w(`  ${C.dim}saved → auditors.json[${AUDITOR}].reviews · users.json[${requester}].reviews_given · HCS review/voting${C.reset}`);
     if (fin.mint) w(`  ${C.green}✓ VERIFIED NFT${C.reset}  ${hashscan("token", fin.mint.tokenId)} ${C.dim}#${fin.mint.serial} → ${fin.mint.owner}${C.reset}`);
+
+    // Arc escrow resolution — the money leg, alongside the verdict + NFT (settle or slash)
+    if (escrow?.resolved && escrow.outcome === "settled") w(`\n  ${C.green}✓ ESCROW SETTLED${C.reset}  ${C.dim}Arc job #${escrow.jobId} · ${escrow.amount} USDC (fee+bond) → auditor · ${explorerTx(escrow.resolveTx!)}${C.reset}`);
+    else if (escrow?.resolved && escrow.outcome === "slashed") w(`\n  ${C.red}⛓ ESCROW SLASHED${C.reset}  ${C.dim}Arc job #${escrow.jobId} · bond ${escrow.amount} USDC → auditor (caught it) · fee ${escrow.feeRefunded} refunded → developer · ${explorerTx(escrow.resolveTx!)}${C.reset}`);
+    else if (escrow?.funded) w(`\n  ${C.amber}escrow funded but not resolved${C.reset}  ${C.dim}Arc job #${escrow.jobId}${C.reset}`);
 
     // TEE attestation quote — the sealed proof the audit ran in the enclave
     const att = result.attestation;
@@ -359,6 +439,7 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
       decision: fin.decision,
       mint: fin.mint ? { tokenId: fin.mint.tokenId, serial: fin.mint.serial, owner: fin.mint.owner } : null,
       review: { auditor: AUDITOR, rating: fin.rating, comment: fin.comment, source: review.source, auditorAvgRating: savedReview.rating },
+      escrow,
       hashscanTask: hashscan("topic", taskTopicId),
     };
   } finally {
