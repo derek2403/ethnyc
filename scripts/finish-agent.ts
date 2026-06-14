@@ -10,6 +10,7 @@ import { join } from "path";
 import { getClient, hashscan } from "../lib/hedera";
 import { checkAgentHuman } from "../lib/world-agentkit";
 import { initMars, registerAgent } from "../lib/agents";
+import { saveAgent } from "../lib/db.mjs";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const PENDING = join(process.cwd(), "agent-pending.json");
@@ -56,6 +57,24 @@ async function main() {
         if (s.status === "done") console.log(`  ✓ ${s.label}${s.id ? ` → ${s.id}` : ""}`);
       }
     );
+
+    // persist to the dashboard's store (db/users.json | db/auditors.json)
+    saveAgent(role, {
+      agent_id: a.account,
+      evm_address: a.evmAddress ?? null,
+      role,
+      world_verified: a.worldVerified,
+      human_id: a.humanId ?? null,
+      profile_topic: a.profileTopicId,
+      voting_topic: a.votingTopicId,
+      review_topic: a.reviewTopicId,
+      account_memo: a.accountMemo,
+      registry_seq: a.registrySeq ?? null,
+      encrypted_key: a.encryptedKey ?? null,
+      rating: "5.0",
+      hedera: true,
+      registered_at: new Date().toISOString(),
+    });
 
     console.log("\n✓ registered");
     console.log(`  account ${hashscan("account", a.account)}`);
