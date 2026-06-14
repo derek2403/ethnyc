@@ -14,17 +14,18 @@ import {
   getClient, getOperatorKey, getOperatorId, hashscan,
   createTopic, submitMessage,
   hcs16Memo, buildHCS16FloraCreated, buildHCS16Chat,
-  buildTaskInit, buildAuditStep, buildAuditVerdict, buildJobPosted,
+  buildTaskInit, buildJobPosted,
   uploadFileHCS1,
 } from "../lib/hedera";
 import { loadState, saveState } from "../lib/state";
 import { initMars } from "../lib/agents";
-import { SKILLS, getSkill, requesterAsk, requesterAccept, REQUESTER, AUDITOR } from "../lib/demo-skills";
+import { SKILLS, getSkill, requesterAsk, requesterAccept, REQUESTER, AUDITOR, AUDITOR_REVIEW_TOPIC, AUDITOR_VOTING_TOPIC } from "../lib/demo-skills";
 import { loadDemoSkill } from "../lib/demo-skills-loader";
 import { generateAuditorQuote } from "../lib/auditor";
+import { auditTaskToHcs, finalizeTaskToHcs } from "../lib/audit-task";
 
 // ── tiny ANSI helpers (terminal chat bubbles) ──────────────────────────────
-const C = { dim: "\x1b[2m", reset: "\x1b[0m", bold: "\x1b[1m", blue: "\x1b[34m", purple: "\x1b[35m", green: "\x1b[32m", red: "\x1b[31m", amber: "\x1b[33m" };
+const C = { dim: "\x1b[2m", reset: "\x1b[0m", bold: "\x1b[1m", blue: "\x1b[34m", purple: "\x1b[35m", green: "\x1b[32m", red: "\x1b[31m", amber: "\x1b[33m", cyan: "\x1b[36m" };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const who = (acct: string) =>
   acct === AUDITOR ? `${C.purple}auditor${C.reset}` : acct === REQUESTER ? `${C.blue}requester${C.reset}` : `${C.dim}agent${C.reset}`;
@@ -82,6 +83,7 @@ async function main() {
       skill: skill.name, scope: skill.scope, requester: REQUESTER, auditor: AUDITOR,
       price: skill.price, bond: skill.bond, time: skill.time, version: skill.version,
       tier: skill.tier, compliance: skill.compliance, contentHash, chatRoomTopicId,
+      m: quote.text, // the auditor's quote → nego record on the task topic
     };
     let content = source;
     let contentHrl: string | undefined;
@@ -96,17 +98,37 @@ async function main() {
     console.log(`${C.bold}TASK TOPIC${C.reset}  ${hashscan("topic", taskTopicId)}`);
     console.log(`  ${C.green}⛓ seq ${initSeq}${C.reset}  init · ${skill.price} escrow · bond ${skill.bond} · scope ${skill.scope}${contentHrl ? ` · content ${contentHrl}` : ""}\n`);
 
-    // 3) audit pipeline → appends to the SAME task topic
-    for (const st of skill.steps) {
-      const r = await submitMessage(client, taskTopicId, buildAuditStep(skill.name, st.name, st.status, st.detail));
-      const mark = st.status === "fail" ? `${C.red}✗${C.reset}` : st.status === "pass" ? `${C.green}✓${C.reset}` : `${C.amber}•${C.reset}`;
-      console.log(`  ${mark} ${C.bold}${st.name.padEnd(12)}${C.reset} ${C.dim}seq ${r.sequenceNumber}${C.reset}  ${st.detail}`);
-      await sleep(600);
+    // 3) REAL audit pipeline (derek's runAuditPipeline) → each stage + verdict recorded onto the task topic
+    console.log(`${C.cyan}${C.bold}AUDIT${C.reset}  ${C.dim}4 OpenAI stages → recorded on HCS${C.reset}`);
+    const res = await auditTaskToHcs(client, {
+      taskTopicId,
+      skillRef: skill.ref,
+      registryTopicId,
+      onStage: (s) => {
+        const mark = s.status === "fail" ? `${C.red}✗${C.reset}` : s.status === "warn" ? `${C.amber}•${C.reset}` : `${C.green}✓${C.reset}`;
+        console.log(`  ${mark} ${C.bold}${s.stage.padEnd(12)}${C.reset} ${s.summary}`);
+        for (const f of s.findings.slice(0, 3)) console.log(`      ${C.dim}[${String(f.severity).toUpperCase()}] ${f.title}${C.reset}`);
+      },
+    });
+    const vColor = res.verdict === "SAFE" ? C.green : C.red;
+    console.log(`\n  ${vColor}${C.bold}VERDICT: ${res.verdict}${C.reset}  ${C.dim}risk ${res.risk} · trust ${res.trustScore} · (${res.source})${C.reset}`);
+    if (res.capabilities.length) {
+      console.log(`  ${C.bold}What the skill does:${C.reset}`);
+      for (const c of res.capabilities) console.log(`    • ${c}`);
     }
-    const vSeq = (await submitMessage(client, taskTopicId, buildAuditVerdict(skill.name, skill.expect, skill.trust, contentHrl ?? "hcs://1/pending"))).sequenceNumber;
-    const vColor = skill.expect === "SAFE" ? C.green : C.red;
-    console.log(`\n  ${vColor}${C.bold}VERDICT: ${skill.expect}${C.reset}  trust ${skill.trust}  ${C.dim}seq ${vSeq}${C.reset}`);
-    console.log(`\n${C.dim}full trail → ${hashscan("topic", taskTopicId)}${C.reset}\n`);
+    console.log(`\n${C.dim}report → ${res.reportHrl} · full trail → ${hashscan("topic", taskTopicId)}${C.reset}\n`);
+
+    // 4) requester decision → review the auditor → mint VERIFIED NFT (SAFE → approve+mint; DANGEROUS → block)
+    const approve = res.verdict === "SAFE";
+    const fin = await finalizeTaskToHcs(client, {
+      taskTopicId, skill: skill.name, verdict: res.verdict, approve,
+      requester: REQUESTER, auditor: AUDITOR, reviewTopicId: AUDITOR_REVIEW_TOPIC, votingTopicId: AUDITOR_VOTING_TOPIC,
+      registryTopicId, mintToAccountId: REQUESTER,
+    });
+    console.log(`${C.bold}${approve ? C.green + "APPROVED" : C.red + "BLOCKED"}${C.reset}  ${C.dim}requester ${fin.decision}${C.reset}`);
+    console.log(`  auditor reviewed ${C.amber}${"★".repeat(fin.rating)}${C.reset} ${C.dim}(+${fin.rating} rep → ${AUDITOR})${C.reset}`);
+    if (fin.mint) console.log(`  ${C.green}✓ VERIFIED NFT${C.reset}  ${hashscan("token", fin.mint.tokenId)} ${C.dim}#${fin.mint.serial} → ${fin.mint.owner}${C.reset}`);
+    console.log();
   } finally {
     client.close();
   }
