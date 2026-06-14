@@ -239,8 +239,13 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
       w(`\n  ${C.bold}TEE ATTESTATION · Phala TDX${C.reset}  ${badge}`);
       w(`  ${C.dim}reportData (sha256 of audit record)${C.reset}  0x${String(att.reportData).slice(0, 24)}…`);
       if (att.info?.app_id) w(`  ${C.dim}enclave app id${C.reset}  ${att.info.app_id}`);
-      if (att.quote) w(`  ${C.dim}TDX quote (${String(att.quote).length} chars)${C.reset}  ${String(att.quote).slice(0, 88)}…`);
       w(`  ${C.dim}verify ↗${C.reset}  ${att.verify || "https://proof.t16z.com/"}`);
+      if (att.quote) {
+        // Print the FULL quote on its own ANSI-free line so it can be selected
+        // (triple-click) and pasted straight into the TEE explorer.
+        w(`  ${C.dim}TDX quote (${String(att.quote).length} chars) — select the line below and paste into the explorer:${C.reset}`);
+        w(String(att.quote));
+      }
     } else if (att?.error) {
       w(`\n  ${C.amber}TEE attestation unavailable${C.reset} — ${att.error}`);
     } else {
