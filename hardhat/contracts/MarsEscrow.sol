@@ -42,6 +42,7 @@ contract MarsEscrow {
     mapping(uint256 => Job) public jobs;
 
     event JobCreated(uint256 indexed jobId, address indexed developer, address indexed auditor, uint256 fee, uint256 bond);
+    event TermsSet(uint256 indexed jobId, uint256 fee, uint256 bond);
     event FeeFunded(uint256 indexed jobId, address indexed from, uint256 amount);
     event BondPosted(uint256 indexed jobId, address indexed from, uint256 amount);
     event Funded(uint256 indexed jobId);
@@ -53,12 +54,14 @@ contract MarsEscrow {
     }
 
     /// @notice Create a new audit job. Returns its id.
+    /// @dev    fee/bond MAY be 0 at creation — open the job first, then set the agreed price
+    ///         later with setTerms() once the negotiation finishes. fundFee()/postBond()
+    ///         enforce a non-zero price, so a 0/0 draft can never be funded by accident.
     function createJob(address developer, address auditor, uint256 fee, uint256 bond)
         external
         returns (uint256 jobId)
     {
         require(developer != address(0) && auditor != address(0), "zero address");
-        require(fee > 0 && bond > 0, "fee/bond must be > 0");
         jobId = nextJobId++;
         jobs[jobId] = Job({
             developer: developer,
@@ -72,27 +75,45 @@ contract MarsEscrow {
         emit JobCreated(jobId, developer, auditor, fee, bond);
     }
 
-    /// @notice Developer locks the audit fee. Developer must approve() this contract
-    ///         for at least `fee` on the USDC token first.
-    function fundFee(uint256 jobId) external {
+    /// @notice Set / replace the agreed fee + bond after creation — the "fill in the price
+    ///         once the discussion finishes" step. Allowed only while the job is Open and
+    ///         before either side has funded (so locked amounts can't be changed under you).
+    function setTerms(uint256 jobId, uint256 fee, uint256 bond) external {
+        Job storage j = jobs[jobId];
+        require(j.status == Status.Open, "job not open");
+        require(!j.feeFunded && !j.bondPosted, "already funding");
+        j.fee = fee;
+        j.bond = bond;
+        emit TermsSet(jobId, fee, bond);
+    }
+
+    /// @notice Developer locks the audit fee. The amount is passed HERE (so the UI can set it at
+    ///         fund time, independently of the bond) and is recorded on the job. The developer
+    ///         must approve() this contract for at least `fee` on the USDC token first.
+    function fundFee(uint256 jobId, uint256 fee) external {
         Job storage j = jobs[jobId];
         require(j.status == Status.Open, "job not open");
         require(!j.feeFunded, "fee already funded");
+        require(fee > 0, "fee must be > 0");
+        j.fee = fee;
         j.feeFunded = true;
-        require(usdc.transferFrom(j.developer, address(this), j.fee), "fee transfer failed");
-        emit FeeFunded(jobId, j.developer, j.fee);
+        require(usdc.transferFrom(j.developer, address(this), fee), "fee transfer failed");
+        emit FeeFunded(jobId, j.developer, fee);
         _settleFundedState(jobId, j);
     }
 
-    /// @notice Selected auditor locks the bond. Auditor must approve() this contract
-    ///         for at least `bond` on the USDC token first.
-    function postBond(uint256 jobId) external {
+    /// @notice Selected auditor locks the bond. The amount is passed HERE (independently of the
+    ///         fee) and recorded on the job. The auditor must approve() this contract for at
+    ///         least `bond` on the USDC token first.
+    function postBond(uint256 jobId, uint256 bond) external {
         Job storage j = jobs[jobId];
         require(j.status == Status.Open, "job not open");
         require(!j.bondPosted, "bond already posted");
+        require(bond > 0, "bond must be > 0");
+        j.bond = bond;
         j.bondPosted = true;
-        require(usdc.transferFrom(j.auditor, address(this), j.bond), "bond transfer failed");
-        emit BondPosted(jobId, j.auditor, j.bond);
+        require(usdc.transferFrom(j.auditor, address(this), bond), "bond transfer failed");
+        emit BondPosted(jobId, j.auditor, bond);
         _settleFundedState(jobId, j);
     }
 

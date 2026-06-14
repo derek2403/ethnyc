@@ -1,8 +1,11 @@
 import { defineConfig, configVariable } from "hardhat/config";
 import hardhatToolboxViem from "@nomicfoundation/hardhat-toolbox-viem";
-// Load hardhat/.env into process.env so configVariable() can read ARC_PRIVATE_KEY.
-// (Hardhat 3 reads config variables from env vars by default but does NOT auto-load .env.)
-import "dotenv/config";
+// Load env so configVariable() can read ARC_PRIVATE_KEY. Hardhat 3 reads config variables from
+// env vars by default but does NOT auto-load .env — and the key may live in hardhat/.env OR the
+// project-root .env.local, so load both (later calls don't override already-set vars).
+import dotenv from "dotenv";
+dotenv.config();                          // hardhat/.env (cwd)
+dotenv.config({ path: "../.env.local" }); // project-root .env.local
 
 export default defineConfig({
   plugins: [hardhatToolboxViem],
