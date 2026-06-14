@@ -199,8 +199,10 @@ export default function ConnectAgent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, idsKey]);
 
-  // Freshly-connected float to the top; the rest keep newest-first order.
-  const roster = [...agents].reverse().sort((a, b) => Number(fresh.has(b.id)) - Number(fresh.has(a.id)));
+  const latest: ConnectedAgent | null =
+    agents.length === 0
+      ? null
+      : [...agents].sort((a, b) => Number(fresh.has(b.id)) - Number(fresh.has(a.id)) || String(b.registeredAt ?? "").localeCompare(String(a.registeredAt ?? "")))[0];
 
   // Streaming curl: creates the account, prints the World-ID verify QR in your
   // terminal, polls AgentBook, then finishes (voting/review/profile/registry).
@@ -241,9 +243,9 @@ export default function ConnectAgent() {
       </div>
 
       <div className="no-bar" style={{ flex: 1, minHeight: 0, padding: 16, overflow: "auto", display: "flex", flexDirection: "column" }}>
-        {/* Once any agent is connected, the cell becomes its roster + profiles.
-            Before that, it shows the onboarding intro + register/connect. */}
-        {mode === "home" && roster.length === 0 && (
+        {/* Once any agent is connected, the cell shows the latest account's
+            profile. Before that, the onboarding intro + register/connect. */}
+        {mode === "home" && !latest && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
             <div style={{ fontSize: 12.5, color: "var(--ink-2)", textAlign: "center", maxWidth: 360, lineHeight: 1.5 }}>
               Onboard your agent to MARS — register a new identity, or log back into an existing one.
@@ -265,16 +267,14 @@ export default function ConnectAgent() {
           </div>
         )}
 
-        {mode === "home" && roster.length > 0 && (
+        {mode === "home" && latest && (
           <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: ".1em", color: "var(--ink-3)", textTransform: "uppercase" }}>Connected agents</span>
-              <span style={{ fontSize: 9.5, color: "var(--ink-3)" }}>{state.stats.users} users · {state.stats.auditors} auditors · tap → explorer</span>
+              <span style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: ".1em", color: "var(--ink-3)", textTransform: "uppercase" }}>Latest agent</span>
+              <span style={{ fontSize: 9.5, color: "var(--ink-3)" }}>{agents.length > 1 ? `+${agents.length - 1} more · ` : ""}tap → explorer</span>
             </div>
             <div className="no-bar" style={{ flex: 1, minHeight: 0, overflow: "auto", display: "flex", flexDirection: "column" }}>
-              {roster.map((a) => (
-                <AgentCard key={a.id} a={a} fresh={fresh.has(a.id)} />
-              ))}
+              <AgentCard a={latest} fresh={fresh.has(latest.id)} />
             </div>
             <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8 }}>
               <button
