@@ -86,10 +86,11 @@ import { loadState, saveState } from "@/lib/state";
 import { loadDemoSkill } from "@/lib/demo-skills-loader";
 import { getSkill } from "@/lib/demo-skills";
 import { generateAuditorQuote } from "@/lib/auditor";
+import { auditTaskToHcs, finalizeTaskToHcs } from "@/lib/audit-task";
 
 export const config = {
   api: { bodyParser: { sizeLimit: "5mb" } }, // audit reports / manifests can be large
-  maxDuration: 60, // multi-step Hedera txns (NFT create+mint, chunked upload)
+  maxDuration: 300, // runAudit = 4 OpenAI stages + several HCS writes; needs headroom
 };
 
 // World ID agentkit: is an address human-backed? Fails soft — never blocks account creation.
@@ -361,6 +362,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           compliance: body.compliance,
           contentHash,
           chatRoomTopicId: body.chatRoomTopicId,
+          m: body.quote, // the auditor's actual (AI) quote line → the nego record lives on the task topic too
         };
         // inline the source if `init` stays under the 1KB HCS message limit; else offload to HCS-1
         let content = source;
@@ -380,6 +382,37 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           registrySeq = reg.sequenceNumber;
         }
         return res.status(200).json({ taskTopicId, jobId: taskTopicId, initSeq: initRes.sequenceNumber, registrySeq, contentHrl, contentHash, init: JSON.parse(init) });
+      }
+
+      // ── /chatroom: run the REAL audit pipeline → record each stage + verdict on the task topic ──
+      case "runAudit": {
+        // 4 OpenAI stages (or canned fallback) → HCS stages + verdict(+capabilities) + HCS-1 report + registry
+        const result = await auditTaskToHcs(client, {
+          taskTopicId: body.taskTopicId,
+          skillRef: body.skillRef ?? body.skill,
+          registryTopicId: body.registryTopicId,
+        });
+        return res.status(200).json(result);
+      }
+
+      // ── /chatroom: requester approves/disapproves → review the auditor → mint VERIFIED NFT ──
+      case "finalizeTask": {
+        return res.status(200).json(
+          await finalizeTaskToHcs(client, {
+            taskTopicId: body.taskTopicId,
+            skill: body.skill,
+            verdict: body.verdict,
+            approve: !!body.approve,
+            rating: body.rating,
+            comment: body.comment,
+            requester: body.requester,
+            auditor: body.auditor,
+            reviewTopicId: body.reviewTopicId,
+            votingTopicId: body.votingTopicId,
+            registryTopicId: body.registryTopicId,
+            mintToAccountId: body.mintToAccountId,
+          })
+        );
       }
 
       // ── HCS-11: AGENT PROFILE ─────────────────────────────────
@@ -486,7 +519,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             "createSkillsRegistry / createVersionRegistry / registerSkill / registerVersion / uploadManifest",
             "trustScore",
             "createRfqBoard / rfqAnnounce / rfqPropose / rfqRespond / rfqComplete / rfqWithdraw / rfqList",
-            "createFlora / floraChat / floraRead / ensureChatRoom / auditorReply / createTask",
+            "createFlora / floraChat / floraRead / ensureChatRoom / auditorReply / createTask / runAudit / finalizeTask",
             "createProfile",
             "reputationDeploy / reputationMint / reputationTransfer / reputationBurn / reputationBalance",
             "reputationVotingDeploy / voteGood / voteBad / removeVote / reputationScore",
