@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { AUDITORS, AUDITS, SKILLS, USERS } from "./marsData";
+import { useMars } from "./marsState";
+import type { Audit, Auditor, Skill, User } from "./marsData";
 import { AuditDetail, AuditorDetail, Eyebrow, UserDetail } from "./MarsUI";
 
 // Expanded Network Explorer — a live system map.
@@ -9,7 +10,6 @@ import { AuditDetail, AuditorDetail, Eyebrow, UserDetail } from "./MarsUI";
 
 type Mode = "network" | "auditors" | "users";
 
-const ONGOING = AUDITS.filter((a) => a.state === "ongoing");
 // The audit dots travel one continuous loop: Mars → Phobos → Deimos → Mars.
 const LOOP = "M300,300 L680,150 L720,450 Z";
 
@@ -32,6 +32,13 @@ export default function ExplorerExpanded() {
   const [userId, setUserId] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
 
+  const { state } = useMars();
+  const audits = state.audits;
+  const auditors = state.auditors;
+  const users = state.users;
+  const skills = state.skills;
+  const ongoing = audits.filter((a) => a.state === "ongoing");
+
   const reset = (m: Mode) => {
     setMode(m);
     setAuditId(null);
@@ -39,9 +46,9 @@ export default function ExplorerExpanded() {
     setUserId(null);
   };
 
-  const selAudit = auditId ? AUDITS.find((a) => a.id === auditId) ?? null : null;
-  const selAuditor = auditorId ? AUDITORS.find((a) => a.id === auditorId) ?? null : null;
-  const selUser = userId ? USERS.find((u) => u.id === userId) ?? null : null;
+  const selAudit = auditId ? audits.find((a) => a.id === auditId) ?? null : null;
+  const selAuditor = auditorId ? auditors.find((a) => a.id === auditorId) ?? null : null;
+  const selUser = userId ? users.find((u) => u.id === userId) ?? null : null;
   const hasSel = !!(selAudit || selAuditor || selUser);
   const showBack = hasSel || mode !== "network";
 
@@ -130,12 +137,12 @@ export default function ExplorerExpanded() {
           {/* live-audit dots — each travels along a connection line via CSS
               motion-path, so they sit ON the line and freeze on hover (the
               .map-paused rule pauses the CSS animation). */}
-          {ONGOING.map((a, i) => {
+          {ongoing.map((a, i) => {
             const active = a.id === auditId;
             // same duration, evenly-spaced start offsets → dots distributed
             // around the loop, all flowing Mars → Phobos → Deimos → Mars.
             const dur = 16;
-            const delay = -((i * dur) / ONGOING.length);
+            const delay = -((i * dur) / ongoing.length);
             return (
               <g
                 key={a.id}
@@ -181,33 +188,45 @@ export default function ExplorerExpanded() {
           <UserDetail u={selUser} />
         ) : mode === "auditors" ? (
           <div>
-            <Eyebrow color="var(--comm)">Auditor swarm · {AUDITORS.length}</Eyebrow>
+            <Eyebrow color="var(--comm)">Auditor swarm · {auditors.length}</Eyebrow>
             <div style={{ fontSize: 11, color: "var(--ink-3)", margin: "6px 0 14px" }}>World-ID-verified auditors staked on MARS.</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              {AUDITORS.map((a) => (
+              {auditors.map((a) => (
                 <ListRow key={a.id} left={a.id} right={`${a.spec} · ${a.status}`} onClick={() => setAuditorId(a.id)} />
               ))}
             </div>
           </div>
         ) : mode === "users" ? (
           <div>
-            <Eyebrow color="var(--warn)">User base · {USERS.length}</Eyebrow>
+            <Eyebrow color="var(--warn)">User base · {users.length}</Eyebrow>
             <div style={{ fontSize: 11, color: "var(--ink-3)", margin: "6px 0 14px" }}>Agents licensing verified skills.</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              {USERS.map((u) => (
+              {users.map((u) => (
                 <ListRow key={u.id} left={u.id} right={`${u.skills} licensed${u.active ? " · live" : ""}`} onClick={() => setUserId(u.id)} />
               ))}
             </div>
           </div>
         ) : (
-          <NetworkSummary onAudit={(id) => setAuditId(id)} />
+          <NetworkSummary ongoing={ongoing} skills={skills} auditors={auditors} users={users} onAudit={(id) => setAuditId(id)} />
         )}
       </div>
     </div>
   );
 }
 
-function NetworkSummary({ onAudit }: { onAudit: (id: string) => void }) {
+function NetworkSummary({
+  ongoing,
+  skills,
+  auditors,
+  users,
+  onAudit,
+}: {
+  ongoing: Audit[];
+  skills: Skill[];
+  auditors: Auditor[];
+  users: User[];
+  onAudit: (id: string) => void;
+}) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div>
@@ -216,10 +235,10 @@ function NetworkSummary({ onAudit }: { onAudit: (id: string) => void }) {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1, background: "var(--hair-soft)", border: "1px solid var(--hair-soft)", borderRadius: 8, overflow: "hidden" }}>
         {[
-          { v: ONGOING.length, l: "audits in flight", c: "var(--warn)" },
-          { v: SKILLS.filter((s) => s.verdict === "SAFE").length, l: "skills verified", c: "var(--safe)" },
-          { v: AUDITORS.length, l: "auditors", c: "var(--comm)" },
-          { v: USERS.length, l: "users", c: "#e8a15c" },
+          { v: ongoing.length, l: "audits in flight", c: "var(--warn)" },
+          { v: skills.filter((s) => s.verdict === "SAFE").length, l: "skills verified", c: "var(--safe)" },
+          { v: auditors.length, l: "auditors", c: "var(--comm)" },
+          { v: users.length, l: "users", c: "#e8a15c" },
         ].map((t, i) => (
           <div key={i} style={{ background: "var(--inset)", padding: "13px 14px" }}>
             <div style={{ fontSize: 22, fontWeight: 600, color: t.c }}>{t.v}</div>
@@ -230,7 +249,7 @@ function NetworkSummary({ onAudit }: { onAudit: (id: string) => void }) {
       <div>
         <Eyebrow>In flight</Eyebrow>
         <div style={{ display: "flex", flexDirection: "column", gap: 7, marginTop: 10 }}>
-          {ONGOING.map((a) => (
+          {ongoing.map((a) => (
             <ListRow key={a.id} left={a.id} right={a.skill} onClick={() => onAudit(a.id)} />
           ))}
         </div>
