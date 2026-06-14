@@ -94,10 +94,8 @@ export default function LiveAudits() {
           {cards.length ? (
             cards.map((vm) => <AuditCard key={vm.key} vm={vm} />)
           ) : (
-            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", fontSize: 11, color: "var(--ink-3)", lineHeight: 1.6 }}>
-              No audits yet.
-              <br />
-              Run one → <span style={{ fontFamily: "var(--code)" }}>/api/audit?skill=…</span>
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center", fontSize: 11, color: "var(--ink-3)" }}>
+              No audits yet
             </div>
           )}
         </div>
