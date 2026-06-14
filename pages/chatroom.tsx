@@ -293,9 +293,9 @@ export default function ChatRoom() {
                   detail = m.description ? `“${m.description}”` : `${m.scope}`;
                   sub = `payer ${m.payer ?? m.requester} · auditor ${m.auditor} · ${m.price} escrow · bond ${m.bond} · scope ${m.scope}${Array.isArray(m.files) && m.files.length ? ` · files: ${m.files.join(", ")}` : ""}`;
                 }
-                else if (m.op === "stage") { dot = m.status === "fail" ? "fail" : m.status === "warn" ? "info" : "pass"; title = m.stage; detail = m.summary ?? ""; sub = `${m.finding_count ?? findings.length} finding(s)${m.model ? ` · ${m.model}` : ""}`; }
+                else if (m.op === "stage") { dot = m.status === "fail" ? "fail" : m.status === "warn" ? "info" : "pass"; title = m.stage; detail = m.summary ?? ""; sub = `${m.finding_count ?? findings.length} finding(s)`; }
                 else if (m.op === "step") { dot = m.status; title = m.step; detail = m.detail ?? ""; } // legacy
-                else if (m.op === "verdict") { dot = m.verdict === "SAFE" ? "verdict-safe" : "verdict-danger"; title = `Verdict: ${m.verdict}`; detail = m.summary ?? `trust ${m.trustScore ?? "—"}`; sub = `risk ${m.risk ?? "—"} · trust ${m.trustScore ?? "—"}${m.model ? ` · ${m.model}` : ""}`; }
+                else if (m.op === "verdict") { dot = m.verdict === "SAFE" ? "verdict-safe" : "verdict-danger"; title = `Verdict: ${m.verdict}`; detail = m.summary ?? `trust ${m.trustScore ?? "—"}`; sub = `risk ${m.risk ?? "—"} · trust ${m.trustScore ?? "—"}`; }
                 else if (m.op === "decision") { dot = m.decision === "approved" ? "verdict-safe" : "verdict-danger"; title = `Requester ${m.decision}`; detail = m.note ?? ""; }
                 else if (m.op === "reviewed") { dot = "init"; title = `Auditor reviewed · ${"★".repeat(Number(m.rating) || 0)}`; detail = m.comment ?? ""; sub = `→ auditor ${m.auditor}`; }
                 else if (m.op === "minted") { dot = "verdict-safe"; title = "VERIFIED NFT minted (HTS)"; detail = `token ${m.token} · serial #${m.serial}`; sub = `owner ${m.owner}`; }

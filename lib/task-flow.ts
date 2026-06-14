@@ -190,7 +190,10 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
     // replayable HCS trail — no separate random id.
     const auditId = taskTopicId;
     startAudit({ auditId, skill: name, agentId: requester, auditor: AUDITOR, model, files: files.map((f) => f.name) });
-    w(`${C.cyan}${C.bold}AUDIT${C.reset}  ${C.dim}${auditId} · model ${model}${C.reset}`);
+    // NOTE: `model` is kept ONLY internally (the OpenAI call + the off-chain audits.json log).
+    // It is deliberately NOT shown to the user and NOT written to HCS — the on-chain record is
+    // model-agnostic (the verdict + evidence stand on their own, regardless of which LLM produced them).
+    w(`${C.cyan}${C.bold}AUDIT${C.reset}  ${C.dim}${auditId}${C.reset}`);
 
     // runAuditPipeline does the 4 OpenAI stages + the Phala attestation. We don't just wait
     // for the result — the onEvent callback fires per stage so we can (a) stream live progress
@@ -239,8 +242,9 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
     for (const ev of result.record.evidence as { stage: string; summary?: string; findings?: { severity: string; title: string; detail?: string }[] }[]) {
       const findings = ev.findings ?? [];
       const status = findings.some((f) => ["high", "critical"].includes(String(f.severity).toLowerCase())) ? "fail" : "pass";
-      // RICH stage record: summary + each finding (severity/title/detail) + a severity histogram + the model
-      const r = await submitMessage(client, taskTopicId, buildAuditStage(name, cap(ev.stage), ev.summary || "", findings, model));
+      // RICH stage record: summary + each finding (severity/title/detail) + a severity histogram.
+      // model is intentionally omitted — the on-chain trail stays model-agnostic.
+      const r = await submitMessage(client, taskTopicId, buildAuditStage(name, cap(ev.stage), ev.summary || "", findings));
       const mark = status === "fail" ? `${C.red}✗${C.reset}` : `${C.green}✓${C.reset}`;
       w(`  ${mark} ${C.bold}${cap(ev.stage).padEnd(12)}${C.reset} ${C.dim}seq ${r.sequenceNumber}${C.reset}  ${ev.summary || ""}`);
     }
@@ -248,11 +252,12 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
     // content-addressed; the on-chain verdict references it by HRL.
     const reportFile = await uploadFileHCS1(client, JSON.stringify({ ...result.record, verdict, attestation: result.attestation ?? null }), "application/json");
     const attHex = result.attestation?.reportData && !result.attestation?.error ? `0x${String(result.attestation.reportData).replace(/^0x/, "").slice(0, 48)}` : undefined;
-    // RICH verdict: capabilities ("what it actually does") + risk + recommendation + model + the HCS-1 report (+ attestation)
+    // RICH verdict: capabilities ("what it actually does") + risk + recommendation + the HCS-1 report (+ attestation).
+    // model is intentionally omitted — the on-chain verdict stays model-agnostic.
     const vSeq = (await submitMessage(client, taskTopicId, buildAuditVerdictFull(name, {
       verdict: verdict.verdict, risk: verdict.risk, summary: verdict.summary,
       capabilities: verdict.capabilities, recommendation: verdict.recommendation,
-      trustScore: trust, model, reportHrl: reportFile.hrl, attestation: attHex,
+      trustScore: trust, reportHrl: reportFile.hrl, attestation: attHex,
     }))).sequenceNumber;
 
     // ════════════════════════════════════════════════════════════════════════
