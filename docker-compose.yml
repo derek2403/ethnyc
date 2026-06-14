@@ -17,12 +17,11 @@ services:
     container_name: mars
     restart: always
     expose:
-      - "3000"            # internal only; nginx-proxy terminates :80. No host port needed.
-    # ── Only if you point the Cloudflare Tunnel STRAIGHT at the app (Service URL
-    #    http://localhost:3000) instead of at nginx. Uncomment, then `docker compose up -d`.
-    #    Use any free host port — it does NOT have to be 3000 (e.g. "3001:3000").
-    # ports:
-    #   - "3000:3000"
+      - "3000"            # the app's internal port
+    # mars owns host :3000. gym was moved off 3000 → 3001 to free it (see steps).
+    # The Cloudflare Tunnel points mars.derek2403.win → http://localhost:3000.
+    ports:
+      - "3000:3000"
     volumes:
       - ./db:/app/db                              # read-write JSON data store
       - ./skills:/app/skills                      # verified-skill artifacts (read-write)
