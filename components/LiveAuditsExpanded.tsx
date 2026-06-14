@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { AUDITS } from "./marsData";
 import type { Audit } from "./marsData";
+import { useMars } from "./marsState";
 import { AuditDetail, Eyebrow, VerdictPill } from "./MarsUI";
 
 // Expanded Live Audits — list of audits; click one to see its trail/steps.
@@ -36,10 +36,12 @@ function AuditRow({ a, active, onClick }: { a: Audit; active: boolean; onClick: 
 }
 
 export default function LiveAuditsExpanded() {
-  const ongoing = AUDITS.filter((a) => a.state === "ongoing");
-  const past = AUDITS.filter((a) => a.state === "past");
-  const [sel, setSel] = useState(ongoing[0]?.id ?? AUDITS[0].id);
-  const audit = AUDITS.find((a) => a.id === sel) ?? AUDITS[0];
+  const { state } = useMars();
+  const audits = state.audits;
+  const ongoing = audits.filter((a) => a.state === "ongoing");
+  const past = audits.filter((a) => a.state === "past");
+  const [sel, setSel] = useState<string | null>(null);
+  const audit = (sel ? audits.find((a) => a.id === sel) : null) ?? ongoing[0] ?? past[0] ?? null;
 
   return (
     <div style={{ display: "flex", height: "100%" }}>
@@ -47,7 +49,7 @@ export default function LiveAuditsExpanded() {
         <Eyebrow color="var(--warn)">In flight · {ongoing.length}</Eyebrow>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
           {ongoing.map((a) => (
-            <AuditRow key={a.id} a={a} active={a.id === sel} onClick={() => setSel(a.id)} />
+            <AuditRow key={a.id} a={a} active={a.id === audit?.id} onClick={() => setSel(a.id)} />
           ))}
         </div>
         <div style={{ marginTop: 22 }}>
@@ -55,13 +57,14 @@ export default function LiveAuditsExpanded() {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
           {past.map((a) => (
-            <AuditRow key={a.id} a={a} active={a.id === sel} onClick={() => setSel(a.id)} />
+            <AuditRow key={a.id} a={a} active={a.id === audit?.id} onClick={() => setSel(a.id)} />
           ))}
         </div>
+        {!audits.length && <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 14 }}>No audits yet.</div>}
       </div>
       <div className="no-bar" style={{ flex: 1, minWidth: 0, overflow: "auto", padding: 28 }}>
         <div style={{ maxWidth: 560 }}>
-          <AuditDetail a={audit} />
+          {audit ? <AuditDetail a={audit} /> : <div style={{ fontSize: 13, color: "var(--ink-3)" }}>Run an audit to see its trail.</div>}
         </div>
       </div>
     </div>

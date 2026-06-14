@@ -5,6 +5,7 @@ import LiveAudits from "@/components/LiveAudits";
 import SkillsVerified from "@/components/SkillsVerified";
 import ConnectAgent from "@/components/ConnectAgent";
 import CrossChainSearch from "@/components/CrossChainSearch";
+import { MarsProvider } from "@/components/marsState";
 
 // Mars System Dashboard — bento explorer (5×4 grid).
 // Header + the 5 standalone cell components, with shared design tokens
@@ -32,6 +33,7 @@ export default function Page1() {
         />
       </Head>
 
+      <MarsProvider>
       <div
         style={{
           // Uniform ~10% up-scale so all text/UI reads a little larger while
@@ -76,6 +78,7 @@ export default function Page1() {
           </div>
         </div>
       </div>
+      </MarsProvider>
 
       <style jsx global>{`
         :root {

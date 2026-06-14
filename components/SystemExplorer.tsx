@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Popout, { ExpandButton } from "./Popout";
 import ExplorerExpanded from "./ExplorerExpanded";
+import { useMars } from "./marsState";
 
 // ── Cell A · System Explorer ─────────────────────────────────────────────
 // Standalone: holds its own view / selection / Mars-panel state and runs its
@@ -85,38 +86,9 @@ interface TrailRow {
   color: string;
 }
 
-const SKILL_NAMES = [
-  "stripe-payments-v2",
-  "coingecko-price-oracle",
-  "twilio-sms-send",
-  "uniswap-v3-swap",
-  "openai-embed-batch",
-  "pdf-extract-tables",
-  "plaid-balance-fetch",
-  "sendgrid-mailer",
-];
-const REGIONS = ["eu-west", "us-east", "ap-south", "sa-east", "af-north", "us-west", "eu-north", "ap-east"];
-const SPECS = ["DeFi / oracles", "Payments", "LLM tools", "Data / PII", "Web3 infra", "Messaging", "Contracts", "Identity"];
-const A_STATUS = ["auditing", "active", "idle"];
-
-const POOL: { t: string; c: string }[] = [
-  { t: "rfq posted · pdf-extract-tables@0.9.0 · tier financial", c: "var(--ink-2)" },
-  { t: "auditor-31 → quote · bond 2,500 USDC", c: "var(--comm)" },
-  { t: "escrow opened · 6,000 USDC · auditor-12 selected", c: "var(--warn)" },
-  { t: "auditor-12 → scanner: 0 secrets · 2 deprecated deps", c: "var(--ink-2)" },
-  { t: "auditor-07 → sandbox: call to api.coingecko.com", c: "var(--warn)" },
-  { t: "auditor-23 → sandbox: fs write outside /tmp — DENIED", c: "var(--danger)" },
-  { t: "fork-runner: replayed 1,284 txns · 0 reverts", c: "var(--comm)" },
-  { t: "synthesizer: verdict SAFE · confidence 0.97", c: "var(--safe)" },
-  { t: "chainlink-tee: attestation 0x9f3a..a7c1 signed", c: "var(--comm)" },
-  { t: "hedera: recorded topic 0.0.491827", c: "var(--ink-2)" },
-  { t: "license minted → 0xA17c..3e · stripe-payments-v2", c: "var(--safe)" },
-];
-
-const utcTime = (d: Date) => d.toUTCString().slice(17, 25);
 const pct = (v: number) => Math.round(v * 100) + "%";
 
-// Golden-angle sunflower layout — deterministic.
+// Golden-angle sunflower layout — deterministic positions for the moon stars.
 const GA = Math.PI * (3 - Math.sqrt(5));
 function layout(n: number, minR: number, maxR: number) {
   const o: { x: number; y: number }[] = [];
@@ -128,105 +100,27 @@ function layout(n: number, minR: number, maxR: number) {
   return o;
 }
 
-function buildAuditors(): Auditor[] {
-  const pos = layout(16, 128, 172);
-  const out: Auditor[] = [];
-  for (let i = 0; i < 16; i++) {
-    const proposed = 42 + (i * 17) % 140;
-    const processed = Math.floor(proposed * (0.58 + (i % 5) * 0.07));
-    out.push({
-      id: "auditor-" + String(i + 1).padStart(2, "0"),
-      status: A_STATUS[i % 3],
-      rep: 0.9 + ((i * 7) % 10) / 100,
-      rating: 4.2 + ((i * 3) % 9) / 10,
-      proposed,
-      processed,
-      accuracy: 94 + ((i * 5) % 6),
-      stake: 1500 + (i % 6) * 750,
-      region: REGIONS[i % REGIONS.length],
-      spec: SPECS[i % SPECS.length],
-      last: i % 3 === 2 ? i * 2 + 3 + "m ago" : i + 1 + "s ago",
-      x: pos[i].x,
-      y: pos[i].y,
-    });
-  }
-  return out;
-}
-
-function buildUsers(): User[] {
-  const pos = layout(20, 124, 176);
-  const hex = "0123456789abcdef";
-  const out: User[] = [];
-  for (let i = 0; i < 20; i++) {
-    const h1 = hex[(i * 7) % 16] + hex[(i * 3 + 5) % 16] + hex[(i * 11) % 16] + hex[(i * 5 + 2) % 16];
-    const h2 = hex[(i * 13) % 16] + hex[(i * 2 + 9) % 16];
-    out.push({
-      id: "0x" + h1 + "…" + h2,
-      skills: 1 + (i * 5) % 9,
-      spend: 200 + (i * 137) % 4400,
-      since: ["2024", "2025", "2026"][i % 3] + " · Q" + (1 + (i % 4)),
-      rating: 3.8 + ((i * 4) % 12) / 10,
-      sessions: i % 5,
-      last: SKILL_NAMES[i % SKILL_NAMES.length] + "@" + (1 + (i % 3)) + "." + (i % 9) + "." + (i % 5),
-      active: i % 4 === 0,
-      x: pos[i].x,
-      y: pos[i].y,
-    });
-  }
-  return out;
-}
-
-// Deterministic seed so server and first client render agree; the feed below
-// reshuffles it client-side after mount.
-const SEED_BASE = 1_700_000_000_000;
-function seedTrail(): TrailRow[] {
-  const seed: TrailRow[] = [];
-  for (let i = 0; i < 7; i++) {
-    const e = POOL[i % POOL.length];
-    const d = new Date(SEED_BASE - (7 - i) * 4000);
-    seed.unshift({ id: "s" + i, time: utcTime(d), text: e.t, color: e.c });
-  }
-  return seed;
-}
-
 export default function SystemExplorer() {
-  const auditors = useMemo(buildAuditors, []);
-  const users = useMemo(buildUsers, []);
+  const { state } = useMars();
+  const aPos = useMemo(() => layout(Math.max(state.auditors.length, 1), 128, 172), [state.auditors.length]);
+  const uPos = useMemo(() => layout(Math.max(state.users.length, 1), 124, 176), [state.users.length]);
+  const auditors: Auditor[] = state.auditors.map((a, i) => ({ ...a, x: aPos[i % aPos.length].x, y: aPos[i % aPos.length].y }));
+  const users: User[] = state.users.map((u, i) => ({ ...u, x: uPos[i % uPos.length].x, y: uPos[i % uPos.length].y }));
 
   const [view, setView] = useState<View>("system");
   const [marsOpen, setMarsOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<EntityType | null>(null);
-  const [trail, setTrail] = useState<TrailRow[]>(seedTrail);
-  const [seq, setSeq] = useState<string>((88412).toLocaleString());
-  const [kpi, setKpi] = useState({ audits: 7, verified: 1284, escrow: 48250, flagged: 23 });
   const [open, setOpen] = useState(false);
 
-  const poolIx = useRef(0);
-  const seqNum = useRef(88412);
-
-  useEffect(() => {
-    const feed = setInterval(() => {
-      const e = POOL[poolIx.current % POOL.length];
-      poolIx.current++;
-      seqNum.current += Math.floor(2 + Math.random() * 4);
-      const row: TrailRow = { id: "e" + poolIx.current + "_" + Date.now(), time: utcTime(new Date()), text: e.t, color: e.c };
-      setTrail((t) => [row, ...t].slice(0, 9));
-      setSeq(seqNum.current.toLocaleString());
-    }, 2600);
-    const kpiTimer = setInterval(() => {
-      setKpi((k) => {
-        const next = { ...k };
-        if (Math.random() < 0.5) next.escrow += Math.floor((Math.random() - 0.45) * 900);
-        if (Math.random() < 0.35) next.audits = Math.max(3, Math.min(12, next.audits + (Math.random() < 0.5 ? 1 : -1)));
-        return next;
-      });
-    }, 2800);
-    return () => {
-      clearInterval(feed);
-      clearInterval(kpiTimer);
-    };
-  }, []);
+  // audit-trail feed, sequence and KPIs — all from the DB
+  const trail: TrailRow[] = state.audits.slice(0, 9).map((a) => ({
+    id: a.id,
+    time: a.date && a.date !== "now" ? a.date.slice(11, 19) : "now",
+    text: `${a.skill} · ${a.verdict}`,
+    color: a.verdict === "DANGEROUS" ? "var(--danger)" : a.verdict === "SAFE" ? "var(--safe)" : "var(--warn)",
+  }));
+  const seq = String(state.audits.length);
 
   const goSystem = () => {
     setView("system");
@@ -343,10 +237,10 @@ export default function SystemExplorer() {
   const moonAtmoBig = isA ? "atmoC2" : "atmoW2";
 
   const marsStats = [
-    { value: String(kpi.audits), label: "audits in progress", color: "var(--warn)" },
-    { value: kpi.verified.toLocaleString(), label: "skills verified", color: "var(--safe)" },
-    { value: String(kpi.flagged), label: "flagged dangerous", color: "var(--danger)" },
-    { value: "$" + kpi.escrow.toLocaleString(), label: "value in escrow", color: "var(--ink)" },
+    { value: String(state.stats.auditsInFlight), label: "audits in progress", color: "var(--warn)" },
+    { value: String(state.stats.skillsVerified), label: "skills verified", color: "var(--safe)" },
+    { value: String(state.stats.flagged), label: "flagged dangerous", color: "var(--danger)" },
+    { value: String(state.stats.agents), label: "agents", color: "var(--ink)" },
   ];
 
   return (

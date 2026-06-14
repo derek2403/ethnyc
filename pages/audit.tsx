@@ -137,6 +137,16 @@ interface Attestation {
   usage?: { prompt_tokens: number; completion_tokens: number };
 }
 
+interface TeeAttestation {
+  ok: boolean;
+  mocked: boolean;
+  reportData: string;
+  quote: string;
+  event_log?: string;
+  info?: { app_id?: string; instance_id?: string } | null;
+  verify?: string;
+}
+
 const STATUS_LABEL: Record<StepStatus, string> = {
   done: "DONE",
   running: "RUNNING",
@@ -202,6 +212,8 @@ export default function Audit({ skills }: { skills: DemoSkill[] }) {
   ]);
   const [running, setRunning] = useState(false);
   const [attestation, setAttestation] = useState<Attestation | null>(null);
+  const [tee, setTee] = useState<TeeAttestation | null>(null);
+  const [teeError, setTeeError] = useState<string | null>(null);
   const [recorded, setRecorded] = useState("—");
   const [error, setError] = useState<string | null>(null);
 
@@ -219,6 +231,8 @@ export default function Audit({ skills }: { skills: DemoSkill[] }) {
   function reset() {
     setStatuses(["pending", "pending", "pending", "pending"]);
     setAttestation(null);
+    setTee(null);
+    setTeeError(null);
     setError(null);
     setRecorded("—");
   }
@@ -260,7 +274,35 @@ export default function Audit({ skills }: { skills: DemoSkill[] }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `Audit failed (${res.status})`);
-      setAttestation(data as Attestation);
+      const att = data as Attestation;
+      setAttestation(att);
+
+      // Final step: seal the whole audit record into a genuine Phala TDX quote.
+      // (Non-fatal — the verdict still stands if the CVM isn't reachable.)
+      try {
+        const bundle = {
+          audit_id: skill.id,
+          skill: skill.version,
+          file: skill.filename,
+          file_sha256: att.localDigest,
+          verdict: att.verdict.verdict,
+          risk: att.verdict.risk,
+          chainlink_inference: att.inferenceId,
+          evidence,
+          audited_at: new Date().toISOString(),
+        };
+        const tRes = await fetch("/api/tee/attest", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(bundle),
+        });
+        const tData = await tRes.json();
+        if (!tRes.ok) throw new Error(tData.error ?? `TEE attestation failed (${tRes.status})`);
+        setTee(tData as TeeAttestation);
+      } catch (te: unknown) {
+        setTeeError(te instanceof Error ? te.message : "TEE attestation failed");
+      }
+
       setRecorded("now");
       set(3, "done");
     } catch (e: unknown) {
@@ -337,6 +379,10 @@ export default function Audit({ skills }: { skills: DemoSkill[] }) {
           <MetaRow label="Escrow (Arc x402)" value={skill.escrow} />
           <MetaRow label="Auditor bond" value={skill.bond} />
           <MetaRow label="HCS audit-trail topic" value={skill.hcsTopic} />
+          <MetaRow
+            label="TEE attestation (Phala TDX)"
+            value={tee ? (tee.mocked ? "mock (no CVM)" : "attested ✓") : teeError ? "unavailable" : "—"}
+          />
           <MetaRow label="Recorded" value={recorded} />
         </div>
 
@@ -351,7 +397,7 @@ export default function Audit({ skills }: { skills: DemoSkill[] }) {
             const isSynth = i === 3;
             const detail =
               isSynth && attestation
-                ? `Verdict ${attestation.verdict.verdict} · risk ${attestation.verdict.risk} · Chainlink attestation 0x${(attestation.enclaveDigest ?? "").slice(0, 6)}`
+                ? `Verdict ${attestation.verdict.verdict} · risk ${attestation.verdict.risk} · Chainlink attestation 0x${(attestation.enclaveDigest ?? "").slice(0, 6)}${tee ? ` · TEE quote ${tee.reportData.slice(0, 10)}…` : ""}`
                 : step.detail;
             return (
               <li key={step.stage} className="flex gap-4">
@@ -401,6 +447,62 @@ export default function Audit({ skills }: { skills: DemoSkill[] }) {
           <p className="mt-6 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400">
             {error}
           </p>
+        )}
+
+        {(tee || teeError) && (
+          <div className="mt-10">
+            <div className="flex items-center gap-3">
+              <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                TEE Attestation · Phala TDX
+              </p>
+              {tee && (
+                <span
+                  className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                    tee.mocked
+                      ? "border-amber-500/40 text-amber-600 dark:text-amber-500"
+                      : "border-green-500/40 text-green-600 dark:text-green-500"
+                  }`}
+                >
+                  {tee.mocked ? "MOCK · no CVM" : "Attested ✓"}
+                </span>
+              )}
+            </div>
+
+            {teeError && !tee && (
+              <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400">
+                {teeError} — deploy <code>tee/</code> and set <code>PHALA_ATTESTOR_URL</code>.
+              </p>
+            )}
+
+            {tee && (
+              <div className="mt-4 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-950">
+                <div className="flex items-baseline justify-between py-1">
+                  <span className="text-zinc-500 dark:text-zinc-400">reportData (sha256 of audit record)</span>
+                  <span className={`${mono} text-zinc-900 dark:text-zinc-100`}>0x{tee.reportData.slice(0, 24)}…</span>
+                </div>
+                {tee.info?.app_id && (
+                  <div className="flex items-baseline justify-between py-1">
+                    <span className="text-zinc-500 dark:text-zinc-400">enclave app id</span>
+                    <span className={`${mono} text-zinc-900 dark:text-zinc-100`}>{tee.info.app_id}</span>
+                  </div>
+                )}
+                <p className="mt-3 text-xs font-semibold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                  TDX quote
+                </p>
+                <pre className={`${mono} mt-2 max-h-40 overflow-auto rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-[11px] leading-relaxed text-zinc-700 dark:border-zinc-800 dark:bg-black dark:text-zinc-300`}>
+                  {tee.quote}
+                </pre>
+                <a
+                  href={tee.verify ?? "https://proof.t16z.com/"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-block text-xs font-semibold text-amber-600 hover:underline dark:text-amber-500"
+                >
+                  Verify this quote ↗
+                </a>
+              </div>
+            )}
+          </div>
         )}
 
         {attestation && (
