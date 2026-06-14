@@ -289,16 +289,18 @@ export default function ChatRoom() {
                 const findings: any[] = Array.isArray(m.findings) ? m.findings : [];
                 const caps: string[] = Array.isArray(m.capabilities) ? m.capabilities : [];
                 if (m.op === "init") {
-                  dot = "init"; title = "Task opened · terms locked on HCS";
+                  dot = "init"; title = m.status === "posted" ? "Task posted · not started (awaiting negotiation)" : "Task opened · terms on HCS";
                   detail = m.description ? `“${m.description}”` : `${m.scope}`;
                   sub = `payer ${m.payer ?? m.requester} · auditor ${m.auditor} · ${m.price} escrow · bond ${m.bond} · scope ${m.scope}${Array.isArray(m.files) && m.files.length ? ` · files: ${m.files.join(", ")}` : ""}`;
                 }
-                else if (m.op === "stage") { dot = m.status === "fail" ? "fail" : m.status === "warn" ? "info" : "pass"; title = m.stage; detail = m.summary ?? ""; sub = `${m.finding_count ?? findings.length} finding(s)${m.model ? ` · ${m.model}` : ""}`; }
+                else if (m.op === "stage") { dot = m.status === "fail" ? "fail" : m.status === "warn" ? "info" : "pass"; title = m.stage; detail = m.summary ?? ""; sub = `${m.finding_count ?? findings.length} finding(s)`; }
                 else if (m.op === "step") { dot = m.status; title = m.step; detail = m.detail ?? ""; } // legacy
-                else if (m.op === "verdict") { dot = m.verdict === "SAFE" ? "verdict-safe" : "verdict-danger"; title = `Verdict: ${m.verdict}`; detail = m.summary ?? `trust ${m.trustScore ?? "—"}`; sub = `risk ${m.risk ?? "—"} · trust ${m.trustScore ?? "—"}${m.model ? ` · ${m.model}` : ""}`; }
+                else if (m.op === "verdict") { dot = m.verdict === "SAFE" ? "verdict-safe" : "verdict-danger"; title = `Verdict: ${m.verdict}`; detail = m.summary ?? `trust ${m.trustScore ?? "—"}`; sub = `risk ${m.risk ?? "—"} · trust ${m.trustScore ?? "—"}`; }
                 else if (m.op === "decision") { dot = m.decision === "approved" ? "verdict-safe" : "verdict-danger"; title = `Requester ${m.decision}`; detail = m.note ?? ""; }
                 else if (m.op === "reviewed") { dot = "init"; title = `Auditor reviewed · ${"★".repeat(Number(m.rating) || 0)}`; detail = m.comment ?? ""; sub = `→ auditor ${m.auditor}`; }
                 else if (m.op === "minted") { dot = "verdict-safe"; title = "VERIFIED NFT minted (HTS)"; detail = `token ${m.token} · serial #${m.serial}`; sub = `owner ${m.owner}`; }
+                else if (m.op === "escrow_funded") { dot = "init"; title = `Escrow funded · both sides locked → task started (Arc)`; detail = `developer fee ${m.fee} · auditor bond ${m.bond} USDC → ${m.status ?? "Funded"}`; sub = `${m.chain ?? "arc-testnet"} · job #${m.job_id} · escrow ${m.escrow}`; }
+                else if (m.op === "escrow_resolved") { const slashed = m.outcome === "slashed"; dot = slashed ? "verdict-danger" : "verdict-safe"; title = slashed ? `Escrow slashed · bond ${m.amount} USDC → auditor (Arc)` : `Escrow settled · ${m.amount} USDC (fee+bond) → auditor (Arc)`; detail = slashed ? `fee ${m.fee_refunded} refunded → developer · ${m.status ?? "Slashed"}` : `release → ${m.status ?? "Settled"}`; sub = `${m.chain ?? "arc-testnet"} · job #${m.job_id} · paid ${m.paid_to}`; }
                 else return null;
                 return (
                   <li key={`t${i}`} className="flex gap-4">

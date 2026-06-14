@@ -1162,6 +1162,19 @@ export function buildTaskMinted(skillId: string, tokenId: string, serial: string
   return JSON.stringify({ p: "mars-task", op: "minted", skill: skillId, token: tokenId, serial, owner, ...(metadata && { metadata }), timestamp: new Date().toISOString() });
 }
 
+// ── Cross-chain payment leg (Arc): both sides lock USDC into MarsEscrow on agreement,
+//    then it's released to the auditor once the audit is done. Recorded on the Hedera task
+//    topic so the one trail shows the money moving alongside the verdict. Arc tx hashes are
+//    verifiable on Arcscan; this is the Hedera-side receipt of the Arc settlement. ──
+/** Both sides funded the Arc escrow (developer fee + auditor bond locked → Funded). */
+export function buildEscrowFunded(skillId: string, e: { chain?: string; jobId: number; escrow: string; developer: string; auditor: string; fee: string; bond: string; status?: string; createTx: string; fundFeeTx: string; postBondTx: string }): string {
+  return JSON.stringify({ p: "mars-task", op: "escrow_funded", skill: skillId, chain: e.chain ?? "arc-testnet", job_id: e.jobId, escrow: e.escrow, developer: e.developer, auditor: e.auditor, fee: e.fee, bond: e.bond, status: e.status ?? "Funded", create_tx: e.createTx, fund_fee_tx: e.fundFeeTx, post_bond_tx: e.postBondTx, timestamp: new Date().toISOString() });
+}
+/** The Arc escrow was resolved — SETTLE (fee+bond → auditor) or SLASH (bond → reporter, fee → developer). */
+export function buildEscrowResolved(skillId: string, e: { chain?: string; jobId: number; outcome: "settled" | "slashed"; tx: string; paidTo: string; amount: string; feeRefunded?: string; status?: string }): string {
+  return JSON.stringify({ p: "mars-task", op: "escrow_resolved", skill: skillId, chain: e.chain ?? "arc-testnet", job_id: e.jobId, outcome: e.outcome, tx: e.tx, paid_to: e.paidTo, amount: e.amount, ...(e.feeRefunded && { fee_refunded: e.feeRefunded }), status: e.status ?? (e.outcome === "settled" ? "Settled" : "Slashed"), timestamp: new Date().toISOString() });
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // MARS TASK — the per-task topic's INIT message. The task topic is created when a
 // requesting agent accepts an auditor's quote ("create task"); replaying it gives
@@ -1189,6 +1202,7 @@ export interface TaskInit {
   contentHrl?: string; // set when content was offloaded to HCS-1
   contentHash?: string; // sha256 of the original skill source
   chatRoomTopicId?: string; // back-link to the room the nego happened in
+  status?: string; // task lifecycle: "posted" (created, not started) → "agreed" (default)
   m?: string;
 }
 
@@ -1215,7 +1229,7 @@ export function buildTaskInit(t: TaskInit): string {
     bond: t.bond,
     time: t.time,
     ...(t.chatRoomTopicId && { chat_room_topic_id: t.chatRoomTopicId }),
-    status: "agreed",
+    status: t.status ?? "agreed", // "posted" = created but not started; "agreed" once negotiated
     ...(t.m && { m: t.m }),
     timestamp: new Date().toISOString(),
   });
