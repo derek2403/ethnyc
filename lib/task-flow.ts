@@ -156,7 +156,11 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
       name, files, auditId, model,
       apiKey: process.env.OPENAI_API_KEY,
       attestorUrl: process.env.PHALA_ATTESTOR_URL,
-      onEvent: (e: { type?: string; stage?: string; name?: string; status?: string; summary?: string; findings?: { severity: string }[] }) => {
+      onEvent: (e: {
+        type?: string; stage?: string; name?: string; status?: string;
+        summary?: string; findings?: { severity: string }[]; error?: string;
+        attestation?: { mocked?: boolean; reportData?: string; verify?: string };
+      }) => {
         if (e.type === "stage" && e.status === "running") {
           if (STAGE_NUM[e.stage ?? ""]) setAuditStage(auditId, STAGE_NUM[e.stage ?? ""], e.name);
           w(`  ${C.cyan}▶ ${e.name}${C.reset} ${C.dim}…${C.reset}`);
@@ -165,7 +169,17 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
           w(`  ${C.green}✓${C.reset} ${e.summary || ""}`);
         } else if (e.type === "synth" && e.status === "running") {
           setAuditStage(auditId, 4, "Synthesizer");
-          w(`  ${C.cyan}▶ Synthesizer${C.reset} ${C.dim}…${C.reset}`);
+          w(`  ${C.cyan}▶ Synthesizer${C.reset} ${C.dim}— evidence → attested verdict …${C.reset}`);
+        } else if (e.type === "synth" && e.status === "done") {
+          w(`  ${C.green}✓${C.reset} verdict produced`);
+        } else if (e.type === "attest" && e.status === "running") {
+          w(`  ${C.cyan}▶ TEE attestation${C.reset} ${C.dim}— sealing record in Phala enclave …${C.reset}`);
+        } else if (e.type === "attest" && e.status === "done") {
+          const badge = e.attestation?.mocked ? `${C.amber}MOCK (no CVM)${C.reset}` : `${C.green}attested ✓${C.reset}`;
+          w(`  ${C.green}✓${C.reset} ${badge}  reportData 0x${String(e.attestation?.reportData).slice(0, 20)}…`);
+          w(`    ${C.dim}verify: ${e.attestation?.verify || "https://proof.t16z.com/"}${C.reset}`);
+        } else if (e.type === "attest" && e.status === "error") {
+          w(`  ${C.amber}! TEE attestation skipped: ${e.error}${C.reset}`);
         }
       },
     });
@@ -197,18 +211,42 @@ export async function runTaskFlow(opts: TaskFlowOptions): Promise<TaskFlowResult
     if (result.attestation) saveAttestation(auditId, result.attestation, { skill: name, verdict: verdict.verdict, agent_id: requester });
     await submitMessage(client, registryTopicId, buildJobPosted({ jobId: taskTopicId, skill: name, requester, scope: desc.scope, auditTrailTopicId: taskTopicId, status: result.safe ? "verified" : "dangerous" }));
 
-    // ── summary ──
+    // ── FINAL — the two closing steps, mirrored from pages/audit.tsx:
+    //   (a) Synthesizer verdict (summary · capabilities · recommendation)
+    //   (b) TEE attestation quote (Phala TDX)
     const vColor = result.safe ? C.green : C.red;
     w(`\n  ${vColor}${C.bold}VERDICT: ${verdict.verdict}${C.reset}  trust ${trust}  ${C.dim}risk ${verdict.risk} · seq ${vSeq}${C.reset}`);
     if (verdict.summary) w(`  ${verdict.summary}`);
+    if (Array.isArray(verdict.capabilities) && verdict.capabilities.length) {
+      w(`  ${C.dim}capabilities (what it actually does):${C.reset}`);
+      for (const c of verdict.capabilities) w(`    ${C.dim}•${C.reset} ${c}`);
+    }
+    if (verdict.recommendation) w(`  ${C.bold}recommendation:${C.reset} ${verdict.recommendation}`);
+
+    // license result
     if (result.safe && verified) {
       w(`\n  ${C.green}✓ verified${C.reset}  ${verified.verified_name}  →  ${C.bold}licensed to ${requester}${C.reset}`);
       w(`  ${C.dim}saved → ${verified.path} · db/skills.json licensed_agents += ${requester}${C.reset}`);
     } else {
-      w(`\n  ${C.red}✗ flagged DANGEROUS${C.reset}  — not verified, not licensed`);
+      w(`\n  ${C.red}✗ flagged ${verdict.verdict}${C.reset}  — not verified, not licensed`);
     }
-    const attested = !!(result.attestation && !result.attestation.error);
-    if (attested && !result.attestation.mocked) w(`  ${C.green}TEE-attested${C.reset}  reportData 0x${String(result.attestation.reportData).slice(0, 18)}…`);
+
+    // TEE attestation quote — the sealed proof the audit ran in the enclave
+    const att = result.attestation;
+    const attested = !!(att && !att.error);
+    if (attested) {
+      const badge = att.mocked ? `${C.amber}MOCK · no CVM${C.reset}` : `${C.green}Attested ✓${C.reset}`;
+      w(`\n  ${C.bold}TEE ATTESTATION · Phala TDX${C.reset}  ${badge}`);
+      w(`  ${C.dim}reportData (sha256 of audit record)${C.reset}  0x${String(att.reportData).slice(0, 24)}…`);
+      if (att.info?.app_id) w(`  ${C.dim}enclave app id${C.reset}  ${att.info.app_id}`);
+      if (att.quote) w(`  ${C.dim}TDX quote (${String(att.quote).length} chars)${C.reset}  ${String(att.quote).slice(0, 88)}…`);
+      w(`  ${C.dim}verify ↗${C.reset}  ${att.verify || "https://proof.t16z.com/"}`);
+    } else if (att?.error) {
+      w(`\n  ${C.amber}TEE attestation unavailable${C.reset} — ${att.error}`);
+    } else {
+      w(`\n  ${C.dim}TEE attestation: not requested (set PHALA_ATTESTOR_URL)${C.reset}`);
+    }
+
     w(`\n${C.dim}full trail → ${hashscan("topic", taskTopicId)}${C.reset}\n`);
 
     return {
