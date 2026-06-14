@@ -86,7 +86,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         account_memo: result.accountMemo,
         registry_seq: result.registrySeq ?? null,
         encrypted_key: result.encryptedKey ?? null,
-        rating: "5.0",
+        rating: null,
         hedera: true,
         registered_at: new Date().toISOString(),
       });
