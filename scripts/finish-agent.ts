@@ -71,7 +71,7 @@ async function main() {
       account_memo: a.accountMemo,
       registry_seq: a.registrySeq ?? null,
       encrypted_key: a.encryptedKey ?? null,
-      rating: "5.0",
+      rating: null,
       hedera: true,
       registered_at: new Date().toISOString(),
     });
