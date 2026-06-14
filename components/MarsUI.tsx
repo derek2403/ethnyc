@@ -4,6 +4,7 @@ import type { Audit, Auditor, Skill, User, Verdict } from "./marsData";
 import { useMars } from "./marsState";
 
 const sevColor = (s: string) => ({ critical: "var(--danger)", high: "var(--danger)", medium: "var(--warn)", low: "var(--comm)", none: "var(--ink-3)" }[String(s).toLowerCase()] || "var(--ink-3)");
+const sevTint = (s: string) => ({ critical: "rgba(210,63,46,0.12)", high: "rgba(210,63,46,0.10)", medium: "rgba(185,120,15,0.13)", low: "rgba(47,111,208,0.12)", none: "rgba(148,152,162,0.12)" }[String(s).toLowerCase()] || "rgba(148,152,162,0.12)");
 
 // ── Shared presentational atoms (one design language) ──────────────────────
 
@@ -110,8 +111,8 @@ export function AuditTrail({ audit }: { audit: Audit }) {
                 </span>
                 <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color }}>{s.status}</span>
               </div>
-              <div style={{ fontSize: 10.5, color: "var(--ink-3)", marginTop: 2 }}>{STAGE_DESC[s.stage]}</div>
-              <div style={{ fontSize: 11.5, color: "var(--ink-2)", marginTop: 5, fontFamily: "var(--code)", lineHeight: 1.5 }}>{s.detail}</div>
+              <div style={{ fontSize: 10.5, color: "var(--ink-3)", marginTop: 3 }}>{STAGE_DESC[s.stage]}</div>
+              {s.detail && <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 6, fontFamily: "var(--code)", lineHeight: 1.55 }}>{s.detail}</div>}
             </div>
           </div>
         );
@@ -200,7 +201,7 @@ export function SkillDetail({ s }: { s: Skill }) {
           <span style={{ fontSize: 22, fontWeight: 600 }}>{s.id}</span>
           <VerdictPill verdict={s.verdict} />
         </div>
-        <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 5 }}>
+        <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 6 }}>
           {s.category} · v{s.version} · author {s.author}
         </div>
       </div>
@@ -212,19 +213,23 @@ export function SkillDetail({ s }: { s: Skill }) {
         ]}
       />
       <Bar label="trust score · HCS-25" value={s.trust.toFixed(2)} pct={pct(s.trust)} color="var(--safe)" />
-      <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, background: "var(--panel)", border: "1px solid var(--hair-soft)", borderRadius: 10, padding: "12px 14px" }}>
         <Row label="Author royalty" value={s.royalty + " / license"} />
         <Row label="Verified token" value="HTS · minted" />
       </div>
       <div>
-        <SectionTitle>Version & audit history</SectionTitle>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <SectionTitle>Version &amp; audit history</SectionTitle>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {s.versions.map((v) => (
-            <div key={v.version} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11.5, padding: "8px 10px", border: "1px solid var(--hair-soft)", borderRadius: 8 }}>
-              <span style={{ color: "var(--ink)", fontWeight: 500 }}>v{v.version}</span>
-              <span style={{ color: "var(--ink-3)", fontSize: 10.5 }}>{v.date}</span>
-              <span style={{ color: "var(--ink-3)", fontSize: 10.5, fontFamily: "var(--code)" }}>{v.auditId}</span>
-              <VerdictPill verdict={v.verdict} />
+            <div key={v.version} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, background: "var(--panel)", border: "1px solid var(--hair-soft)", borderRadius: 10, padding: "9px 12px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>v{v.version}</span>
+                <span style={{ fontSize: 10, color: "var(--ink-3)", fontFamily: "var(--code)", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{v.auditId}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
+                <span style={{ fontSize: 10.5, color: "var(--ink-2)" }}>{v.date}</span>
+                <VerdictPill verdict={v.verdict} />
+              </div>
             </div>
           ))}
         </div>
@@ -295,11 +300,11 @@ export function AuditDetail({ a }: { a: Audit }) {
           <span style={{ fontSize: 20, fontWeight: 600 }}>{a.id}</span>
           <VerdictPill verdict={a.verdict} />
         </div>
-        <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 5 }}>
+        <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 6 }}>
           {a.skill} · {a.auditor} · {a.tier}
         </div>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, background: "var(--panel)", border: "1px solid var(--hair-soft)", borderRadius: 10, padding: "12px 14px" }}>
         <Row label="HCS audit-trail topic" value={a.topic} />
         <Row label="Recorded" value={a.date} />
       </div>
@@ -310,32 +315,50 @@ export function AuditDetail({ a }: { a: Audit }) {
 
       {hasOutput && (
         <div>
-          <SectionTitle right={a.risk ? <span style={{ fontSize: 10, color: "var(--ink-3)" }}>risk {a.risk}</span> : undefined}>Verdict · final output</SectionTitle>
-          {a.summary && <div style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55 }}>{a.summary}</div>}
+          <SectionTitle>Verdict · final output</SectionTitle>
+          {a.summary && (
+            <div style={{ fontSize: 12.5, color: "var(--ink)", lineHeight: 1.6, background: "var(--panel)", border: "1px solid var(--hair-soft)", borderLeft: `3px solid ${VERDICT_COLOR[a.verdict]}`, borderRadius: 10, padding: "12px 14px" }}>
+              {a.summary}
+            </div>
+          )}
           {!!a.capabilities?.length && (
-            <div style={{ marginTop: 10 }}>
-              <Eyebrow>Capabilities (observed)</Eyebrow>
-              <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 6 }}>
+            <div style={{ marginTop: 14 }}>
+              <Eyebrow>Capabilities observed</Eyebrow>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 8 }}>
                 {a.capabilities.map((c, i) => (
-                  <div key={i} style={{ fontSize: 11.5, color: "var(--ink-2)" }}>• {c}</div>
+                  <div key={i} style={{ display: "flex", gap: 8, fontSize: 12, color: "var(--ink-2)", lineHeight: 1.45 }}>
+                    <span style={{ color: VERDICT_COLOR[a.verdict], flex: "none" }}>•</span>
+                    <span>{c}</span>
+                  </div>
                 ))}
               </div>
             </div>
           )}
           {!!a.findings?.length && (
-            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-              {a.findings.map((f, i) => (
-                <div key={i} style={{ border: "1px solid var(--hair-soft)", borderRadius: 8, padding: "8px 10px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 9, fontWeight: 600, color: sevColor(f.severity), letterSpacing: ".04em" }}>[{String(f.severity).toUpperCase()}]</span>
-                    <span style={{ fontSize: 12, color: "var(--ink)" }}>{f.title}</span>
-                  </div>
-                  {f.detail && <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 3 }}>{f.detail}</div>}
-                </div>
-              ))}
+            <div style={{ marginTop: 14 }}>
+              <Eyebrow>Findings · {a.findings.length}</Eyebrow>
+              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+                {a.findings.map((f, i) => {
+                  const sc = sevColor(f.severity);
+                  return (
+                    <div key={i} style={{ background: "var(--panel)", border: "1px solid var(--hair-soft)", borderLeft: `3px solid ${sc}`, borderRadius: 10, padding: "10px 12px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                        <span style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: sc, background: sevTint(f.severity), borderRadius: 999, padding: "2px 8px", flex: "none" }}>{f.severity}</span>
+                        <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>{f.title}</span>
+                      </div>
+                      {f.detail && <div style={{ fontSize: 11.5, color: "var(--ink-2)", marginTop: 6, lineHeight: 1.5 }}>{f.detail}</div>}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
-          {a.recommendation && <div style={{ marginTop: 10, fontSize: 11.5, color: "var(--ink-2)" }}><span style={{ fontWeight: 600 }}>Recommendation: </span>{a.recommendation}</div>}
+          {a.recommendation && (
+            <div style={{ marginTop: 14, background: "var(--panel)", border: "1px solid var(--hair-soft)", borderRadius: 10, padding: "12px 14px" }}>
+              <span style={{ display: "block", fontSize: 9.5, fontWeight: 600, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--ink-3)", marginBottom: 5 }}>Recommendation</span>
+              <span style={{ fontSize: 12, color: "var(--ink)", lineHeight: 1.55 }}>{a.recommendation}</span>
+            </div>
+          )}
         </div>
       )}
 

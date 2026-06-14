@@ -6,6 +6,8 @@ import { AuditDetail, Eyebrow, VerdictPill } from "./MarsUI";
 // Expanded Live Audits — list of audits; click one to see its trail/steps.
 
 function AuditRow({ a, active, onClick }: { a: Audit; active: boolean; onClick: () => void }) {
+  const ongoing = a.state === "ongoing";
+  const dot = ongoing ? "var(--warn)" : a.verdict === "DANGEROUS" ? "var(--danger)" : "var(--safe)";
   return (
     <button
       onClick={onClick}
@@ -13,23 +15,26 @@ function AuditRow({ a, active, onClick }: { a: Audit; active: boolean; onClick: 
         textAlign: "left",
         cursor: "pointer",
         border: `1px solid ${active ? "var(--ink-3)" : "var(--hair-soft)"}`,
-        background: active ? "var(--inset)" : "transparent",
-        borderRadius: 8,
-        padding: "9px 11px",
+        background: active ? "var(--panel)" : "transparent",
+        boxShadow: active ? "0 1px 3px rgba(0,0,0,0.06)" : "none",
+        borderRadius: 9,
+        padding: "10px 12px",
         display: "flex",
         flexDirection: "column",
-        gap: 6,
+        gap: 7,
+        transition: "border-color .12s ease, background .12s ease",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-        <span style={{ fontSize: 12, color: "var(--ink)", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{a.skill}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+        <span style={{ width: 7, height: 7, borderRadius: "50%", flex: "none", background: dot, animation: ongoing ? "onlinePulse 1.4s ease-in-out infinite" : undefined }} />
+        <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, color: "var(--ink)", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{a.skill}</span>
         <VerdictPill verdict={a.verdict} />
       </div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 10.5, color: "var(--ink-3)" }}>
-        <span>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, fontFamily: "var(--code)", fontSize: 10.5, color: "var(--ink-2)" }}>
+        <span style={{ minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
           {a.id} · {a.auditor}
         </span>
-        <span>{a.state === "ongoing" ? `${a.stageIndex + 1}/4 ${a.steps[a.stageIndex].stage}` : a.tier}</span>
+        <span style={{ flex: "none", color: "var(--ink-3)" }}>{ongoing ? `${a.stageIndex + 1}/4 ${a.steps[a.stageIndex]?.stage ?? ""}` : a.tier}</span>
       </div>
     </button>
   );
@@ -62,8 +67,8 @@ export default function LiveAuditsExpanded() {
         </div>
         {!audits.length && <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 14 }}>No audits yet.</div>}
       </div>
-      <div className="no-bar" style={{ flex: 1, minWidth: 0, overflow: "auto", padding: 28 }}>
-        <div style={{ maxWidth: 560 }}>
+      <div className="no-bar" style={{ flex: 1, minWidth: 0, overflow: "auto", padding: "26px 30px" }}>
+        <div style={{ maxWidth: 640 }}>
           {audit ? <AuditDetail a={audit} /> : <div style={{ fontSize: 13, color: "var(--ink-3)" }}>Run an audit to see its trail.</div>}
         </div>
       </div>

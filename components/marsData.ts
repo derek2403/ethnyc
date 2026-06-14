@@ -19,7 +19,22 @@ export interface Skill {
   versions: { version: string; verdict: Verdict; date: string; auditId: string }[];
 }
 
-export interface Auditor {
+// On-chain identity fields a registered agent carries (from db/users.json +
+// db/auditors.json via deriveState). Optional — older/derived rows may lack them.
+export interface AgentIdentity {
+  evm?: string | null;
+  role?: "user" | "auditor" | string | null;
+  worldVerified?: boolean;
+  humanId?: string | null;
+  profileTopic?: string | null;
+  votingTopic?: string | null;
+  reviewTopic?: string | null;
+  accountMemo?: string | null;
+  registrySeq?: string | number | null;
+  registeredAt?: string | null;
+}
+
+export interface Auditor extends AgentIdentity {
   id: string;
   worldId: string;
   status: "auditing" | "active" | "idle";
@@ -34,7 +49,7 @@ export interface Auditor {
   last: string;
 }
 
-export interface User {
+export interface User extends AgentIdentity {
   id: string;
   worldId: string;
   skills: number;

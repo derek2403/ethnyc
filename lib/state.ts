@@ -9,6 +9,9 @@ export interface MarsState {
   registryTopicId?: string;
   votingTopicId?: string;
   reviewTopicId?: string;
+  chatRoomTopicId?: string; // the one global HCS-16 negotiation room (communication topic)
+  chatFloraId?: string; // label used in HCS-16 operator_id (`sender@<floraId>`)
+  verifiedTokenId?: string; // the HTS VERIFIED NFT collection (minted to a skill that passes + is approved)
 }
 
 export function loadState(): MarsState {

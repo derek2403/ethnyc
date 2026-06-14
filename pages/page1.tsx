@@ -211,6 +211,19 @@ export default function Page1() {
           border-color: var(--hair);
           background: rgba(0, 0, 0, 0.03);
         }
+        /* Connect Agent · connected-agent rows (full-width, link to HashScan) */
+        .ca-agent-card {
+          display: block;
+          border-radius: 8px;
+          transition: background 0.15s ease;
+        }
+        .ca-agent-card:hover {
+          background: rgba(0, 0, 0, 0.025);
+        }
+        /* hairline divider between consecutive rows */
+        .ca-agent-card + .ca-agent-card {
+          border-top: 1px solid var(--hair-soft);
+        }
         .body-hit-comm:hover {
           stroke: var(--comm);
           stroke-width: 1;
